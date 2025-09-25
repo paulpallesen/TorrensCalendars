@@ -163,13 +163,13 @@ def main():
         ics = build_ics_for_group(sub, DEFAULT_TZ, cat)
         slug = slugify(cat)
         fname = f"calendar-{slug}.ics"
-        with open(os.path.join(outdir, fname), "w", encoding="utf-8") as f:
-            f.write(ics)
+        with open(os.path.join(outdir, fname), "w", encoding="utf-8") as f_out:
+            f_out.write(ics)
         built.append((cat, fname, len(sub)))
 
     ics_all = build_ics_for_group(df, DEFAULT_TZ, "All")
-    with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8") as f:
-        f.write(ics_all)
+    with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8") as f_all:
+        f_all.write(ics_all)
 
     feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}]
     feeds += [{"label": cat, "file": fn, "count": count} for (cat, fn, count) in built]
@@ -181,35 +181,41 @@ def main():
 <title>Subscribe to Calendars</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }}
-  .card {{ max-width: 840px; padding: 1.25rem; border: 1px solid #ddd; border-radius: 12px; }}
-  .row {{ margin: .75rem 0; }}
-  select, a.button {{ font-size: 1rem; }}
-  a.button {{ display:inline-block; padding:.6rem .9rem; margin:.25rem .25rem; text-decoration:none; border:1px solid #ccc; border-radius:8px; background:#f6f6f6; }}
-  small {{ color:#666; }}
-  code {{ background:#f0f0f0; padding:.15rem .3rem; border-radius:6px; }}
+  body {{ font-family: 'Segoe UI', Roboto, Arial, sans-serif; margin: 0; padding: 0; background: #f8f9fa; color: #222; }}
+  header {{ background: #002147; color: #fff; padding: 1rem 2rem; }}
+  header h1 {{ margin: 0; font-size: 1.75rem; }}
+  .container {{ max-width: 900px; margin: 2rem auto; padding: 2rem; background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.1); }}
+  .row {{ margin: 1rem 0; }}
+  label {{ font-weight: 600; display: block; margin-bottom: .5rem; }}
+  select {{ font-size: 1rem; padding: .5rem; border: 1px solid #ccc; border-radius: 8px; }}
+  .buttons a {{ display:inline-block; padding:.75rem 1rem; margin:.25rem; border-radius:8px; text-decoration:none; font-weight:500; }}
+  .apple {{ background:#555; color:#fff; }}
+  .google {{ background:#EA4335; color:#fff; }}
+  .outlook {{ background:#0078D4; color:#fff; }}
+  code {{ background:#f6f6f6; padding:.25rem .4rem; border-radius:6px; }}
+  small {{ color:#555; display:block; margin-top:.5rem; }}
 </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Subscribe to a Calendar</h1>
+  <header>
+    <h1>Dynamic Calendars</h1>
+  </header>
+  <div class="container">
     <div class="row">
-      <label for="cal"><strong>Calendar:</strong></label>
+      <label for="cal">Select a Calendar:</label>
       <select id="cal"></select>
     </div>
 
-    <div class="row">
-      <p><strong>Subscribe with:</strong></p>
-      <p>
-        <a id="btn-apple"   class="button" href="#">🍎 Apple / iOS / Outlook (desktop)</a>
-        <a id="btn-google"  class="button" href="#">🟢 Google Calendar (web)</a>
-        <a id="btn-outlook" class="button" href="#">🔵 Outlook.com (web)</a>
-      </p>
-      <p><small>Google requires using "Add by URL" — this button copies the link for you.</small></p>
+    <div class="row buttons">
+      <a id="btn-apple" class="apple" href="#"> Apple / iOS / Outlook (desktop)</a>
+      <a id="btn-google" class="google" href="#">Google Calendar (web)</a>
+      <a id="btn-outlook" class="outlook" href="#">Outlook.com (web)</a>
+      <small>Google requires "Add by URL" — we copy the link for you.</small>
     </div>
 
     <div class="row">
-      <p><strong>Direct feed URL:</strong> <code id="direct-url"></code></p>
+      <label>Direct feed URL:</label>
+      <code id="direct-url"></code>
     </div>
   </div>
 
@@ -233,7 +239,8 @@ def main():
   FEEDS.forEach(f => {{
     const opt = document.createElement('option');
     opt.value = f.file;
-    opt.textContent = f.label + (typeof f.count === 'number' ? ` (${f.count})` : '');
+    // Escape braces inside Python f-string so `${{f.count}}` reaches JS as `${f.count}`
+    opt.textContent = f.label + (typeof f.count === 'number' ? ` (${{f.count}})` : '');
     sel.appendChild(opt);
   }});
 
@@ -251,7 +258,6 @@ def main():
     btnOutlook.href = outlook;
     directCode.textContent = https;
 
-    // Google button custom handling
     btnGoogle.onclick = async function(e) {{
       e.preventDefault();
       try {{
@@ -271,8 +277,8 @@ def main():
 </body>
 </html>
 """
-    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f:
-        f.write(index_html)
+    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f_index:
+        f_index.write(index_html)
 
 if __name__ == "__main__":
     main()
