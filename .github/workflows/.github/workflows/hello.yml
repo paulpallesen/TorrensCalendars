@@ -1,0 +1,12 @@
+name: Hello Actions Sanity
+on:
+  workflow_dispatch: {}   # manual run only
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Say hello
+        run: |
+          echo "Actions are working on this branch."
+          echo "Ref: $GITHUB_REF"
+          uname -a
