@@ -189,6 +189,7 @@ def main():
     feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}]
     feeds += [{"label": cat, "file": fn, "count": count} for (cat, fn, count) in built]
 
+    # --- Themed landing page with official-ish buttons and robust links ---
     index_html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -196,41 +197,153 @@ def main():
 <title>Subscribe to Calendars</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }}
-  .card {{ max-width: 860px; padding: 1.25rem; border: 1px solid #ddd; border-radius: 12px; }}
-  .row {{ margin: .75rem 0; }}
-  select, a.button {{ font-size: 1rem; }}
-  a.button {{ display:inline-block; padding:.6rem .9rem; margin:.25rem .5rem .25rem 0; text-decoration:none; border:1px solid #ccc; border-radius:8px; }}
-  small {{ color:#666; }}
-  code {{ background:#f6f6f6; padding:.15rem .3rem; border-radius:6px; }}
+  :root {{
+    --orange: #F05A28;      /* Torrens orange */
+    --maroon: #4B0A14;      /* deep header accent */
+    --cream:  #F6F2EC;      /* soft background */
+    --ink:    #111111;
+    --muted:  #666666;
+    --card:   #ffffff;
+    --stroke: #e3dfda;
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: var(--ink);
+    background: linear-gradient(180deg, var(--cream), #fff 40%);
+  }}
+  header {{
+    background: var(--maroon);
+    color: #fff;
+    padding: 18px 22px;
+  }}
+  header .brand {{
+    display: flex; align-items: center; gap: 12px;
+    font-weight: 700; letter-spacing: .3px;
+  }}
+  header .dot {{ width: 10px; height: 10px; border-radius: 50%; background: var(--orange); }}
+  main {{ padding: 28px 22px; }}
+  .card {{
+    max-width: 980px; margin: 0 auto; background: var(--card);
+    border: 1px solid var(--stroke); border-radius: 16px; padding: 22px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.05);
+  }}
+  h1 {{ margin: 0 0 10px; font-size: 28px; }}
+  .lead {{ color: var(--muted); margin: 0 0 18px; }}
+  .row {{ margin: 16px 0; }}
+  label {{ font-weight: 600; margin-right: 8px; }}
+  select {{
+    font-size: 16px; padding: 8px 10px; border-radius: 10px;
+    border: 1px solid var(--stroke); background: #fff;
+  }}
+  .btns {{ display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }}
+  a.button {{
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-radius: 12px; text-decoration: none;
+    border: 1px solid var(--stroke); background: #fff; color: var(--ink);
+    transition: transform .05s ease, box-shadow .2s ease;
+  }}
+  a.button:hover {{ transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,.08); }}
+  .button.google  {{ border-color: #DADCE0; }}
+  .button.apple   {{ border-color: #D1D1D1; }}
+  .button.outlook {{ border-color: #C7DCF7; }}
+  small {{ color: var(--muted); }}
+  code {{
+    background: #faf7f3; padding: 4px 6px; border-radius: 8px;
+    border: 1px solid var(--stroke);
+  }}
+  .grid {{ display: grid; gap: 18px; grid-template-columns: 1fr; }}
+  @media (min-width: 820px) {{
+    .grid {{ grid-template-columns: 1.2fr .8fr; }}
+  }}
+  .aside {{
+    border-left: 1px dashed var(--stroke); padding-left: 18px;
+  }}
+  .kicker {{ color: var(--orange); font-weight: 700; font-size: 12px; letter-spacing: .6px; }}
 </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Subscribe to a Calendar</h1>
-    <div class="row">
-      <label for="cal"><strong>Calendar:</strong></label>
-      <select id="cal"></select>
+  <header>
+    <div class="brand">
+      <div class="dot"></div>
+      <div>Torrens Dynamic Calendars</div>
     </div>
+  </header>
+  <main>
+    <div class="card grid">
+      <section>
+        <div class="kicker">LIVE FEEDS</div>
+        <h1>Subscribe to a calendar</h1>
+        <p class="lead">Pick a category, then choose your calendar app. These are <strong>live subscriptions</strong>, not downloads.</p>
 
-    <div class="row">
-      <p><strong>Subscribe with:</strong></p>
-      <p>
-        <a id="btn-apple"      class="button" href="#">Apple / iOS / Outlook (desktop)</a>
-        <a id="btn-google"     class="button" href="#" target="_blank" rel="noopener">Google Calendar (web)</a>
-        <a id="btn-outlookcom" class="button" href="#" target="_blank" rel="noopener">Outlook.com (personal)</a>
-        <a id="btn-o365"       class="button" href="#" target="_blank" rel="noopener">Outlook 365 (work/school)</a>
-      </p>
-      <p><small>Google Calendar adds feeds under <em>Other calendars</em>. Outlook.com/365 should open a subscription dialog.</small></p>
-    </div>
+        <div class="row">
+          <label for="cal">Calendar:</label>
+          <select id="cal"></select>
+        </div>
 
-    <div class="row">
-      <p><strong>Direct feed URL:</strong> <code id="direct-url"></code></p>
-      <p><small>Share this HTTPS link with anyone who needs read-only access.</small></p>
+        <div class="row">
+          <div class="btns">
+            <a id="btn-apple" class="button apple" href="#" title="Subscribe in Apple Calendar / iOS / Outlook desktop">
+              <!-- Apple Calendar glyph -->
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="17" rx="4" ry="4" stroke="#555" fill="#fff"/>
+                <rect x="3" y="8" width="18" height="13" rx="4" ry="4" fill="#fff" stroke="#555"/>
+                <rect x="7" y="2" width="2" height="4" rx="1" fill="#555"/>
+                <rect x="15" y="2" width="2" height="4" rx="1" fill="#555"/>
+                <rect x="6" y="11" width="12" height="7" fill="var(--orange)" opacity=".9"/>
+              </svg>
+              <span>Apple / iOS / Outlook (desktop)</span>
+            </a>
+
+            <a id="btn-google" class="button google" href="#" target="_blank" rel="noopener" title="Add by URL in Google Calendar">
+              <!-- Google 'G' -->
+              <svg width="18" height="18" viewBox="0 0 256 262" aria-hidden="true">
+                <path fill="#4285F4" d="M255.9 133.5c0-10.6-.9-18.3-2.8-26.3H130v47.7h71.9c-1.4 11.9-9 29.8-25.9 41.8l-.2 1.6 37.6 29.1 2.6.3c23.8-22 39.9-54.4 39.9-94.2"/>
+                <path fill="#34A853" d="M130 261.1c36.3 0 66.8-12 89.1-32.8l-42.4-32.8c-11.3 7.9-26.6 13.4-46.7 13.4-35.6 0-65.7-23.5-76.4-56.2l-1.6.1-41.5 32.1-.5 1.5C31.8 231.5 77.9 261.1 130 261.1"/>
+                <path fill="#FBBC05" d="M53.6 152.7c-2.8-8-4.4-16.6-4.4-25.4 0-8.9 1.6-17.5 4.2-25.4l-.1-1.7-42-32.4-1.4.7C3.3 88.5 0 108.7 0 127.3s3.3 38.8 9.7 55.2l43.9-29.8"/>
+                <path fill="#EA4335" d="M130 50.5c25.2 0 42.2 10.9 51.9 20l37.8-36.9C196.5 13.7 166.3 0 130 0 77.9 0 31.8 29.6 9.7 72.1l43.9 29.8C64.3 74.3 94.4 50.5 130 50.5"/>
+              </svg>
+              <span>Google Calendar (web)</span>
+            </a>
+
+            <a id="btn-outlookcom" class="button outlook" href="#" target="_blank" rel="noopener" title="Subscribe in Outlook.com (personal)">
+              <!-- Outlook icon -->
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="2" y="6" width="10" height="12" fill="#0A64D8"/><rect x="10" y="6" width="12" height="12" fill="#0F7BFF" opacity=".85"/>
+                <circle cx="9" cy="12" r="3" fill="#fff"/>
+              </svg>
+              <span>Outlook.com (personal)</span>
+            </a>
+
+            <a id="btn-o365" class="button outlook" href="#" target="_blank" rel="noopener" title="Subscribe in Outlook 365 (work/school)">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="2" y="6" width="10" height="12" fill="#0A64D8"/><rect x="10" y="6" width="12" height="12" fill="#0F7BFF" opacity=".85"/>
+                <circle cx="9" cy="12" r="3" fill="#fff"/>
+              </svg>
+              <span>Outlook 365 (work/school)</span>
+            </a>
+          </div>
+          <p class="lead"><small>Google adds feeds under <em>Other calendars</em>. Apple may show a trust prompt on first subscribe (normal).</small></p>
+        </div>
+      </section>
+
+      <aside class="aside">
+        <div class="kicker">LINKS</div>
+        <div class="row">
+          <p><strong>Subscribe URL (webcal):</strong> <br><code id="sub-url"></code></p>
+          <p><small>Use this to subscribe in apps that accept <code>webcal://</code> (Apple, many desktop clients).</small></p>
+        </div>
+        <div class="row">
+          <p><strong>Download URL (https):</strong> <br><code id="dl-url"></code></p>
+          <p><small>One-off import (static). For live updates, prefer the buttons or the webcal URL.</small></p>
+        </div>
+      </aside>
     </div>
-  </div>
+  </main>
 
 <script>
+  // Feed metadata from build:
   const FEEDS = {feeds};
 
   const sel           = document.getElementById('cal');
@@ -238,8 +351,10 @@ def main():
   const btnGoogle     = document.getElementById('btn-google');
   const btnOutlookCom = document.getElementById('btn-outlookcom');
   const btnO365       = document.getElementById('btn-o365');
-  const directCode    = document.getElementById('direct-url');
+  const subCode       = document.getElementById('sub-url');
+  const dlCode        = document.getElementById('dl-url');
 
+  // Populate dropdown
   FEEDS.forEach(function(f) {{
     var opt = document.createElement('option');
     opt.value = f.file;
@@ -247,15 +362,33 @@ def main():
     sel.appendChild(opt);
   }});
 
-  function updateLinks() {{
-    var file  = sel.value;
-    var https = new URL(file, window.location.href).toString();
+  // Build a canonical absolute URL to the *same directory* as this page
+  function absoluteUrlTo(file) {{
+    // Ensure we are using the page's directory (…/public/)
+    var href = window.location.href;
+    // strip query/hash
+    href = href.split('#')[0].split('?')[0];
+    // drop index.html if present
+    if (href.endsWith('index.html')) href = href.slice(0, -'index.html'.length);
+    // ensure single trailing slash
+    if (!href.endsWith('/')) href += '/';
+    return new URL(file, href).toString();
+  }}
 
+  function updateLinks() {{
+    var file   = sel.value;                 // e.g., "calendar-student.ics"
+    var https  = absoluteUrlTo(file);       // https://…/public/calendar-student.ics
     var webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
+
+    // Google: add-by-URL
     var google = 'https://calendar.google.com/calendar/u/0/r?cid=' + encodeURIComponent(https);
+
+    // Outlook.com personal:
     var outlookCom = 'https://outlook.live.com/calendar/0/addfromweb'
                    + '?url='  + encodeURIComponent(https)
                    + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+
+    // Outlook 365 work/school:
     var o365 = 'https://outlook.office.com/calendar/0/addfromweb'
              + '?url='  + encodeURIComponent(https)
              + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
@@ -265,7 +398,8 @@ def main():
     btnOutlookCom.href = outlookCom;
     btnO365.href       = o365;
 
-    directCode.textContent = https;
+    subCode.textContent = webcal;
+    dlCode.textContent  = https;
   }}
 
   sel.addEventListener('change', updateLinks);
