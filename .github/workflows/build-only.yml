@@ -1,0 +1,30 @@
+name: Calendar Build Only (No Pages)
+on:
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CSV_URL: ${{ secrets.CSV_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify repo files
+        run: |
+          ls -la
+          test -f build_calendars.py || (echo "build_calendars.py missing" && exit 1)
+          test -f requirements.txt   || (echo "requirements.txt missing" && exit 1)
+      - name: Peek CSV
+        run: |
+          echo "Fetching: $CSV_URL"
+          curl -sSL "$CSV_URL" | head -n 10
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Build calendars
+        run: |
+          mkdir -p public
+          python build_calendars.py
+          ls -la public
