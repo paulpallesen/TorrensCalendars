@@ -177,7 +177,7 @@ def main():
         fh.write(ics_all)
     feeds.insert(0, {"label": "All (combined)", "file": "calendar-all.ics", "count": int(len(df))})
 
-    # Simple neutral UI with distinct button colors; not an f-string (so braces are safe).
+    # UI (keeps your Apple/Google/Outlook button colors). Not a Python f-string.
     html_template = """<!doctype html>
 <html lang="en">
 <head>
@@ -187,25 +187,61 @@ def main():
 
 <style>
   :root {
-    --bg: #420318;
-    --page: #f6f3e7;
-    --text: #ffff;
-    --border: #ddd;
-    --apple: #979797;
+    /* Page skin (matches your screenshot) */
+    --page: #f6f3e7;     /* light background */
+    --card: #420318;     /* deep maroon card */
+    --text: #ffffff;     /* card text */
+
+    --border: #6e2236;   /* subtle border on dark card */
+
+    /* Button brand colors (unchanged per your request) */
+    --apple:  #979797;
     --google: #ea4236;
-    --outlook: #0077da;
+    --outlook:#0077da;
+
+    /* Inputs / code */
+    --input-bg: #ffffff;
+    --input-text: #222222;
   }
+
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; background: var(--page); color: var(--text); }
-  .card { max-width: 820px; padding: 1.5rem; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
-  .row { margin: 1rem 0; }
-  .controls { display:flex; align-items:center; gap: .75rem; }
-  label { font-weight: 600; }
-  select { padding: .55rem .7rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; width: 33%; min-width: 220px; background:#fff; }
-  .btn { display:inline-block; padding:.6rem .9rem; margin-right:.5rem; text-decoration:none; color:#fff; border-radius:8px; }
-  .btn-apple { background: var(--apple); }
+  .card { max-width: 980px; padding: 1.75rem; border: 1px solid var(--border); border-radius: 16px; background: var(--card); box-shadow: 0 6px 18px rgba(0,0,0,.12); }
+  h1 { margin: 0 0 1rem 0; font-size: 2.2rem; }
+
+  .row { margin: 1.1rem 0; }
+  .controls { display:flex; align-items:center; gap: .9rem; }
+  .controls label { font-weight: 700; min-width: 115px; } /* fixes the “jump” when the select opens */
+
+  /* Select – compact, not full width */
+  select {
+    padding: .6rem .8rem;
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 10px;
+    font-size: 1rem;
+    width: 340px;              /* fixed width to avoid layout shift */
+    background: var(--input-bg);
+    color: var(--input-text);
+    outline: none;
+  }
+  select:focus { box-shadow: 0 0 0 3px rgba(255,255,255,.15); }
+
+  .btn { display:inline-block; padding:.65rem 1rem; margin-right:.6rem; text-decoration:none; color:#fff; border-radius:10px; font-weight:600; }
+  .btn-apple  { background: var(--apple); }
   .btn-google { background: var(--google); }
-  .btn-outlook { background: var(--outlook); }
-  code { background:#f1f3f5; padding:.2rem .4rem; border-radius:6px; }
+  .btn-outlook{ background: var(--outlook); }
+
+  /* Make the direct URL readable on the dark card */
+  code {
+    display:inline-block;
+    background: var(--input-bg);
+    color: var(--input-text);
+    padding:.35rem .5rem;
+    border-radius:8px;
+    border: 1px solid rgba(0,0,0,.08);
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
 </style>
 </head>
 <body>
@@ -225,20 +261,26 @@ def main():
     </div>
 
     <div class="row">
-      <strong>Direct feed URL:</strong> <code id="direct-url"></code>
+      <strong>Direct feed URL:</strong>
+      <code id="direct-url"></code>
     </div>
   </div>
 
 <script>
-  // Injected from Python below:
+  // Feeds injected from Python:
   const FEEDS = __FEEDS_JSON__;
 
-  function baseUrl() {
-    const u = new URL(window.location.href);
-    if (!u.pathname.endsWith('/')) {
-      u.pathname = u.pathname.substring(0, u.pathname.lastIndexOf('/') + 1);
+  // Robustly build the absolute URL to the /public/*.ics file
+  function icsUrl(file) {
+    const origin = window.location.origin;
+    let path = window.location.pathname;
+    // Ensure we end with a slash (directory)
+    if (!path.endsWith('/')) path = path.slice(0, path.lastIndexOf('/') + 1);
+    // If we're already inside /public/, don't add it again
+    if (path.endsWith('/public/')) {
+      return origin + path + file;
     }
-    return u;
+    return origin + path + 'public/' + file;
   }
 
   const sel = document.getElementById('cal');
@@ -248,32 +290,32 @@ def main():
   const directCode = document.getElementById('direct-url');
 
   // Populate dropdown
-  FEEDS.forEach(feed => {
+  FEEDS.forEach(f => {
     const opt = document.createElement('option');
-    opt.value = feed.file;
-    opt.textContent = feed.label + (typeof feed.count === 'number' ? ` (${feed.count})` : '');
+    opt.value = f.file;
+    opt.textContent = f.label + (typeof f.count === 'number' ? ` (${f.count})` : '');
     sel.appendChild(opt);
   });
 
   function updateLinks() {
-    const file = sel.value;
+    const file  = sel.value;
     const label = sel.options[sel.selectedIndex].text;
-    const base = baseUrl();
-    const https = new URL('public/' + file, base).toString();
+    const https = icsUrl(file);
 
-    // Apple/macOS/iOS & Outlook desktop via webcal
+    // Apple/macOS/iOS & Outlook desktop via webcal://
     const webcal  = 'webcal://' + https.replace(/^https?:\/\//, '');
 
-    // Google add-by-URL prefill (stays on Google's site)
+    // Google “Add by URL” prefill (kept exactly as when it worked)
     const google  = 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(https);
 
-    // Outlook Work/Study (Office 365)
+    // Outlook Work/Study (Office 365) Add by URL (kept as when it worked)
     const outlook = 'https://outlook.office.com/calendar/0/add?url=' + encodeURIComponent(https) +
                     '&name=' + encodeURIComponent(label);
 
     btnApple.href   = webcal;
     btnGoogle.href  = google;
     btnOutlook.href = outlook;
+
     directCode.textContent = https;
   }
 
