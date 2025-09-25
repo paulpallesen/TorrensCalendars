@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, hashlib, sys
+import os, sys, hashlib, json
 import pandas as pd
 from datetime import datetime, date, time, timedelta
 
@@ -91,11 +91,14 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
         "X-PUBLISHED-TTL:PT12H",
         AUS_TZ_VTIMEZONE.strip()
     ]
+
     for _, r in df.iterrows():
         title = str(r.get("Title", "") or "").strip()
-        if not title: continue
+        if not title:
+            continue
         sdate = r.get("Start Date")
-        if not _to_date(sdate): continue
+        if not _to_date(sdate):
+            continue
 
         uid = str(r.get("UID", "") or "")
         stime = r.get("Start Time") or ""
@@ -142,95 +145,180 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
 def main():
     csv_url = os.environ.get("CSV_URL", "").strip()
     if not csv_url:
-        print("ERROR: CSV_URL env var is not set.", file=sys.stderr)
+        print("ERROR: CSV_URL env var is not set. Set it to your published Google Sheet CSV link.", file=sys.stderr)
         sys.exit(1)
 
     df = pd.read_csv(csv_url)
+
     for c in CAL_REQUIRED:
         if c not in df.columns:
             raise SystemExit(f"Missing required column: {c}")
+
     if "Calendar" not in df.columns:
         df["Calendar"] = "General"
+
     df["Calendar"] = df["Calendar"].fillna("General").apply(lambda x: x if str(x).strip() else "General")
 
     outdir = "public"
     os.makedirs(outdir, exist_ok=True)
 
+    # Build per-calendar ICS files
     categories = sorted(df["Calendar"].dropna().unique().tolist())
-    built = []
+    feeds = []
+
     for cat in categories:
         sub = df[df["Calendar"] == cat].copy()
         ics = build_ics_for_group(sub, DEFAULT_TZ, cat)
         slug = slugify(cat)
         fname = f"calendar-{slug}.ics"
-        with open(os.path.join(outdir, fname), "w", encoding="utf-8", newline="") as outf:
-            outf.write(ics)
-        built.append({"label": cat, "file": fname, "count": len(sub)})
+        with open(os.path.join(outdir, fname), "w", encoding="utf-8", newline="") as fh:
+            fh.write(ics)
+        feeds.append({"label": cat, "file": fname, "count": int(len(sub))})
 
+    # Combined "All"
     ics_all = build_ics_for_group(df, DEFAULT_TZ, "All")
-    with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8", newline="") as outf:
-        outf.write(ics_all)
+    with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8", newline="") as fh:
+        fh.write(ics_all)
+    feeds.insert(0, {"label": "All (combined)", "file": "calendar-all.ics", "count": int(len(df))})
 
-    feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}] + built
-
-    # HTML page
-    index_html = f"""<!doctype html>
+    # Page HTML (NOT an f-string) – we inject JSON at the very end to avoid brace escaping hell.
+    html_template = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Subscribe to Calendars</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+
 <style>
-  :root {{
+  :root {
     --brand-maroon: #5c1130;
     --brand-beige: #f8f5f2;
     --text: #222;
     --border: #ccc;
-  }}
-  body {{ font-family: system-ui, sans-serif; margin: 2rem; background: var(--brand-beige); }}
-  .card {{ max-width: 800px; padding: 1.5rem; border: 1px solid var(--border); border-radius: 12px; background: #fff; }}
-  .row {{ margin: 1rem 0; }}
-  a.button {{ display:inline-block; padding:.6rem .9rem; margin-right:.5rem; text-decoration:none;
-             border:1px solid var(--border); border-radius:8px; background: var(--brand-maroon); color:#fff; }}
-  .row.dropdown {{ background: var(--brand-maroon); padding: 1rem; border-radius: 10px; display: flex; align-items: center; gap: 1rem; }}
-  .row.dropdown label {{ color: #fff; font-weight: 700; margin: 0; white-space: nowrap; }}
-  .row.dropdown select {{ background: var(--brand-beige); color: var(--text); padding:.6rem .8rem;
-                         border: 1px solid var(--border); border-radius: 10px; font-size: 1rem; width: 33%; min-width: 220px; }}
+  }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    margin: 2rem;
+    background: var(--brand-beige);
+  }
+  .card {
+    max-width: 800px;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+  }
+  .row { margin: 1rem 0; }
+  a.button {
+    display:inline-block; padding:.6rem .9rem; margin-right:.5rem; text-decoration:none;
+    border:1px solid var(--border); border-radius:8px; background: var(--brand-maroon); color:#fff;
+  }
+  a.button:hover { opacity: .92; }
+  code { background:#f6f6f6; padding:.2rem .4rem; border-radius:6px; }
+
+  /* Banner-style dropdown row */
+  .row.dropdown {
+    background: var(--brand-maroon);
+    padding: 1rem;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .row.dropdown label {
+    color: #fff; font-weight: 700; margin: 0; white-space: nowrap;
+  }
+  .row.dropdown select {
+    background: var(--brand-beige); color: var(--text);
+    padding: .6rem .8rem; border: 1px solid var(--border); border-radius: 10px;
+    font-size: 1rem; width: 33%; min-width: 220px;
+  }
 </style>
 </head>
 <body>
   <div class="card">
     <h1>Subscribe to a Calendar</h1>
+
     <div class="row dropdown">
       <label for="cal">Select a calendar:</label>
       <select id="cal"></select>
     </div>
+
     <div class="row">
       <p><strong>Subscribe with:</strong></p>
       <p>
-        <a id="btn-apple"   class="button" href="#">Apple Calendar</a>
+        <a id="btn-apple"   class="button" href="#">Apple Calendar (macOS / iOS)</a>
         <a id="btn-google"  class="button" href="#" target="_blank">Google Calendar</a>
         <a id="btn-outlook" class="button" href="#" target="_blank">Outlook Work/Study</a>
       </p>
+      <p><small>These are live subscriptions. Apps refresh on their own schedule.</small></p>
     </div>
-    <div class="row"><p><strong>Direct feed URL:</strong> <code id="direct-url"></code></p></div>
+
+    <div class="row">
+      <p><strong>Direct feed URL:</strong> <code id="direct-url"></code></p>
+    </div>
   </div>
+
 <script>
-  const FEEDS = {feeds};
-  const sel = document.getElementById('cal');
-  const btnApple=document.getElementById('btn-apple'),btnGoogle=document.getElementById('btn-google'),btnOutlook=document.getElementById('btn-outlook'),directCode=document.getElementById('direct-url');
-  FEEDS.forEach(feed=>{const opt=document.createElement('option');opt.value=feed.file;opt.textContent=feed.label+(typeof feed.count==='number'?` (${feed.count})`: '');sel.appendChild(opt);});
-  function baseUrl(){{const u=new URL(window.location.href);if(!u.pathname.endsWith('/'))u.pathname=u.pathname.substring(0,u.pathname.lastIndexOf('/')+1);return u;}}
-  function updateLinks(){{const file=sel.value;base=baseUrl();const https=new URL('public/'+file,base).toString();
-    const webcal='webcal://'+https.replace(/^https?:\\/\\//,'');const google='https://calendar.google.com/calendar/render?cid='+encodeURIComponent(https);
-    const outlook='https://outlook.office.com/calendar/0/add?url='+encodeURIComponent(https)+'&name='+encodeURIComponent(sel.options[sel.selectedIndex].text);
-    btnApple.href=webcal;btnGoogle.href=google;btnOutlook.href=outlook;directCode.textContent=https;}}
-  sel.addEventListener('change',updateLinks);updateLinks();
+  // Injected from Python below:
+  const FEEDS = __FEEDS_JSON__;
+
+  function baseUrl() {
+    const u = new URL(window.location.href);
+    if (!u.pathname.endsWith('/')) {
+      u.pathname = u.pathname.substring(0, u.pathname.lastIndexOf('/') + 1);
+    }
+    return u;
+  }
+
+  const sel        = document.getElementById('cal');
+  const btnApple   = document.getElementById('btn-apple');
+  const btnGoogle  = document.getElementById('btn-google');
+  const btnOutlook = document.getElementById('btn-outlook');
+  const directCode = document.getElementById('direct-url');
+
+  // Populate dropdown with counts
+  FEEDS.forEach(feed => {
+    const opt = document.createElement('option');
+    opt.value = feed.file;
+    opt.textContent = feed.label + (typeof feed.count === 'number' ? ` (${feed.count})` : '');
+    sel.appendChild(opt);
+  });
+
+  function updateLinks() {
+    const file = sel.value;
+    const base = baseUrl();
+    const https = new URL('public/' + file, base).toString();
+
+    // Apple/macOS/iOS & Outlook desktop via webcal
+    const webcal  = 'webcal://' + https.replace(/^https?:\/\//, '');
+
+    // Google "add by URL" prefill (works for most users *when signed in*)
+    const google  = 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(https);
+
+    // Outlook Work/Study (Office365 / outlook.office.com)
+    const outlook = 'https://outlook.office.com/calendar/0/add?url='
+                    + encodeURIComponent(https)
+                    + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+
+    btnApple.href   = webcal;
+    btnGoogle.href  = google;
+    btnOutlook.href = outlook;
+    directCode.textContent = https;
+  }
+
+  sel.addEventListener('change', updateLinks);
+  updateLinks();
 </script>
 </body>
-</html>"""
-    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as outf:
-        outf.write(index_html)
+</html>
+"""
+
+    # Inject JSON safely (no f-string)
+    html_out = html_template.replace("__FEEDS_JSON__", json.dumps(feeds, ensure_ascii=False))
+
+    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as fh:
+        fh.write(html_out)
 
 if __name__ == "__main__":
     main()
