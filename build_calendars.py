@@ -191,9 +191,9 @@ def main():
     --page: #f6f7f9;
     --text: #222;
     --border: #ddd;
-    --apple: #333333;
-    --google: #1a73e8;
-    --outlook: #0078d4;
+    --apple: #979797;
+    --google: #ea4236;
+    --outlook: #0077da;
   }
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; background: var(--page); color: var(--text); }
   .card { max-width: 820px; padding: 1.5rem; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
