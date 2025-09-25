@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Dynamic Calendar Subscribe</title>
+</head>
+<body>
+  <h1>Subscribe to a Calendar</h1>
+
+  <label for="calendarSelect">Choose calendar:</label>
+  <select id="calendarSelect">
+    <option value="calendar-all.ics">All</option>
+    <option value="calendar-student.ics">Student</option>
+    <option value="calendar-staff.ics">Staff</option>
+    <option value="calendar-flight-centre.ics">Flight Centre</option>
+  </select>
+
+  <div id="buttons" style="margin-top:20px;">
+    <!-- buttons get injected here -->
+  </div>
+
+  <script>
+    const base = "https://paulpallesen.github.io/TorrensCalendar/public/";
+    const buttonsDiv = document.getElementById("buttons");
+    const select = document.getElementById("calendarSelect");
+
+    function updateButtons() {
+      const file = select.value;
+      const url = base + file;
+      const encoded = encodeURIComponent(url);
+
+      buttonsDiv.innerHTML = `
+        <p><strong>Subscribe with:</strong></p>
+        <p>
+          <a href="webcal://${url.replace(/^https?:\/\//, '')}">Apple Calendar / iOS / Outlook Desktop</a><br>
+          <a href="https://calendar.google.com/calendar/r?cid=${url}" target="_blank">Google Calendar</a><br>
+          <a href="https://outlook.live.com/owa?path=/calendar/action/compose&rru=addsubscription&url=${url}&name=${file}" target="_blank">Outlook.com</a>
+        </p>
+      `;
+    }
+
+    select.addEventListener("change", updateButtons);
+    updateButtons(); // run once on load
+  </script>
+</body>
+</html>
