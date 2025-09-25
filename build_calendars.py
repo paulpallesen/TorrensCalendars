@@ -236,11 +236,11 @@ def main():
   const btnOutlook = document.getElementById('btn-outlook');
   const directCode = document.getElementById('direct-url');
 
-  FEEDS.forEach(f => {{
+  FEEDS.forEach(function(f) {{
     const opt = document.createElement('option');
     opt.value = f.file;
-    // Escape braces inside Python f-string so `${{f.count}}` reaches JS as `${f.count}`
-    opt.textContent = f.label + (typeof f.count === 'number' ? ` (${{f.count}})` : '');
+    // Avoid `${...}` inside a Python f-string: use concatenation instead of template literals
+    opt.textContent = f.label + (typeof f.count === 'number' ? ' (' + String(f.count) + ')' : '');
     sel.appendChild(opt);
   }});
 
@@ -258,6 +258,7 @@ def main():
     btnOutlook.href = outlook;
     directCode.textContent = https;
 
+    // Google: copy URL to clipboard and open "Add by URL" page
     btnGoogle.onclick = async function(e) {{
       e.preventDefault();
       try {{
@@ -267,7 +268,7 @@ def main():
         prompt("Copy this calendar URL manually:", https);
       }}
       const settingsUrl = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl?cid=' + encodeURIComponent(https);
-      window.open(settingsUrl, '_blank');
+      window.open(settingsUrl, '_blank', 'noopener');
     }};
   }}
 
