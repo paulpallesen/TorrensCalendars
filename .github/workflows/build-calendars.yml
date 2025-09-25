@@ -1,13 +1,13 @@
 name: Build & Publish Dynamic Calendars
 
 on:
-  # 1) Scheduled builds (adjust as you like)
+  # 1) Scheduled builds (Sydney time equivalents noted)
   schedule:
-    - cron: "0 14 * * 1"     # Weekly: Mon 00:00 Sydney (~14:00 UTC previous day)
-    - cron: "0 14 1 * *"     # Monthly: 1st of month, 00:00 Sydney
+    - cron: "0 14 * * 1"   # Weekly: Mon 00:00 Australia/Sydney (~14:00 UTC previous day)
+    - cron: "0 14 1 * *"   # Monthly: 1st of month, 00:00 Australia/Sydney
   # 2) Manual run from the Actions tab
   workflow_dispatch: {}
-  # 3) Push to repo (any change to these files)
+  # 3) Push to main (any change to these files)
   push:
     branches: [ main ]
     paths:
@@ -18,7 +18,8 @@ on:
       - "README.md"
 
 permissions:
-  contents: read
+  # Must be write so we can push the gh-pages branch for Google raw URLs
+  contents: write
   pages: write
   id-token: write
 
@@ -27,14 +28,16 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CSV_URL: ${{ secrets.CSV_URL }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Verify repo files
         run: |
           echo "Branch: $GITHUB_REF"
-          pwd
           ls -la
           test -f build_calendars.py || (echo "ERROR: build_calendars.py missing" && exit 1)
           test -f requirements.txt   || (echo "ERROR: requirements.txt missing" && exit 1)
@@ -47,10 +50,8 @@ jobs:
             exit 1
           fi
 
-      - name: Peek at published CSV (first 20 lines)
-        run: |
-          echo "Fetching: $CSV_URL"
-          curl -sSL "$CSV_URL" | head -n 20
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -62,14 +63,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build calendars
+      - name: Build calendars (generate /public/*.ics and landing page)
         run: |
           mkdir -p public
           python build_calendars.py
-          # Redirect root to the dropdown page
+          # Root redirect to the landing page in /public/
           echo "<meta http-equiv='refresh' content='0; url=public/index.html'>" > index.html
 
-      - name: Upload artifact
+      # --- NEW: also publish the raw files to a real gh-pages branch for Google Calendar ---
+      - name: Publish raw files to gh-pages (for Google "Add by URL")
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Publish the whole workspace so /public/*.ics exists at gh-pages/public/*.ics
+          publish_dir: .
+          publish_branch: gh-pages
+          keep_files: false
+          force_orphan: true
+
+      # Artifact for GitHub Pages deployment (serves the nice website)
+      - name: Upload artifact (for GitHub Pages)
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
