@@ -1,0 +1,7 @@
+name: Hello Actions Sanity
+on: { workflow_dispatch: {} }
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Actions are enabled and running on $GITHUB_REF"
