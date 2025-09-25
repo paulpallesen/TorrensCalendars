@@ -85,19 +85,19 @@ def make_uid(fields):
 
 def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
     now_utc = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-   
-    lines = [
-    "BEGIN:VCALENDAR",
-    "PRODID:-//Dynamic Calendars//GitHub Pages//EN",
-    "VERSION:2.0",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    f"X-WR-CALNAME:{ical_escape(cal_name)}",
-    f"X-WR-TIMEZONE:{tzid}",
-    "X-PUBLISHED-TTL:PT12H",  # hint: clients may refresh ~12h; they can ignore it
-    AUS_TZ_VTIMEZONE.strip()
-]
     
+    lines = [
+        "BEGIN:VCALENDAR",
+        "PRODID:-//Dynamic Calendars//GitHub Pages//EN",
+        "VERSION:2.0",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{ical_escape(cal_name)}",
+        f"X-WR-TIMEZONE:{tzid}",
+        "X-PUBLISHED-TTL:PT12H",
+        AUS_TZ_VTIMEZONE.strip()
+    ]
+
     event_count = 0
     for _, r in df.iterrows():
         title = str(r.get("Title", "") or "").strip()
@@ -106,7 +106,7 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
         if not _to_date(sdate): continue
 
         uid = str(r.get("UID", "") or "")
-        course = ""  # if you have a Course column, map it in the sheet and include here
+        course = ""  # optional column for course codes
         cat = str(r.get("Calendar", "") or "").strip()
         stime = r.get("Start Time") or ""
         edate = r.get("End Date") or ""
@@ -197,66 +197,109 @@ def main():
     with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8", newline="") as f:
         f.write(ics_all)
 
-    # Generate a simple index.html with dropdown
-    options_html = '\n'.join(
-        [f'<option value="calendar-all.ics">All (combined)</option>'] +
-        [f'<option value="{fn}">{cat} ({count} events)</option>' for cat, fn, count in built]
-    )
+    # Build data for the page (All + each category)
+    feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}]
+    feeds += [{"label": cat, "file": fn, "count": count} for (cat, fn, count) in built]
 
     index_html = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Dynamic Calendars</title>
+<title>Subscribe to Calendars</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }}
-.card {{ max-width: 720px; padding: 1.25rem; border: 1px solid #ddd; border-radius: 12px; }}
-label, select {{ font-size: 1rem; }}
-#link, #webcal {{ display: block; margin-top: 0.75rem; }}
-small {{ color: #555; }}
+  body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }}
+  .card {{ max-width: 840px; padding: 1.25rem; border: 1px solid #ddd; border-radius: 12px; }}
+  .row {{ margin: .75rem 0; }}
+  select, a.button {{ font-size: 1rem; }}
+  a.button {{ display:inline-block; padding:.6rem .9rem; margin-right:.5rem; text-decoration:none; border:1px solid #ccc; border-radius:8px; }}
+  small {{ color:#666; }}
+  code {{ background:#f6f6f6; padding:.15rem .3rem; border-radius:6px; }}
 </style>
 </head>
 <body>
   <div class="card">
     <h1>Subscribe to a Calendar</h1>
-    <p>Select a calendar category. Use the <b>Subscribe (webcal)</b> link in Google Calendar/Outlook for a live subscription, or the <b>Direct URL</b> link for manual use.</p>
+    <div class="row">
+      <label for="cal"><strong>Calendar:</strong></label>
+      <select id="cal"></select>
+    </div>
 
-    <label for="cal">Calendar:</label>
-    <select id="cal">{options_html}</select>
+    <div class="row">
+      <p><strong>Subscribe with:</strong></p>
+      <p>
+        <a id="btn-apple"   class="button" href="#">Apple / iOS / Outlook (desktop)</a>
+        <a id="btn-google"  class="button" href="#" target="_blank">Google Calendar (web)</a>
+        <a id="btn-outlook" class="button" href="#" target="_blank">Outlook.com (web)</a>
+      </p>
+      <p><small>These are live subscriptions (not downloads). Apps refresh on their own schedule.</small></p>
+    </div>
 
-    <a id="webcal" href="#" target="_blank">Subscribe (webcal)</a>
-    <a id="link" href="#" target="_blank">Direct URL (https)</a>
-
-    <p><small>Note: Calendar apps refresh on their own schedule (Google ~every few hours). Updates come from your Google Sheet via scheduled builds or manual runs.</small></p>
+    <div class="row">
+      <p><strong>Direct feed URL:</strong> <code id="direct-url"></code></p>
+      <p><small>Share this HTTPS link with anyone who needs read-only access.</small></p>
+    </div>
   </div>
 
 <script>
-(function() {{
-  var base = window.location.href.replace(/\\/[^\\/]*$/, "/"); // ensure trailing slash
-  function updateLinks() {{
-    var sel = document.getElementById('cal');
-    var file = sel.value;
-    var https = base + file;
-    var webcal = "webcal://" + https.replace(/^https?:\\/\\//, "");
-    document.getElementById('link').href = https;
-    document.getElementById('webcal').href = webcal;
+  // Feeds provided by the build script:
+  const FEEDS = {feeds};
+
+  // Compute base URL for this page (works whether hosted at / or /<repo>/)
+  function baseUrl() {{
+    const u = new URL(window.location.href);
+    if (!u.pathname.endsWith('/')) {{
+      u.pathname = u.pathname.substring(0, u.pathname.lastIndexOf('/') + 1);
+    }}
+    return u;
   }}
-  document.getElementById('cal').addEventListener('change', updateLinks);
-  updateLinks();
-}})();
+
+  const sel = document.getElementById('cal');
+  const btnApple   = document.getElementById('btn-apple');
+  const btnGoogle  = document.getElementById('btn-google');
+  const btnOutlook = document.getElementById('btn-outlook');
+  const directCode = document.getElementById('direct-url');
+
+  // Populate dropdown
+  FEEDS.forEach(f => {{
+    const opt = document.createElement('option');
+    opt.value = f.file;
+    opt.textContent = f.label + (typeof f.count === 'number' ? ` (${f.count})` : '');
+    sel.appendChild(opt);
+  }});
+
+  function updateLinks() {{
+    const file = sel.value;
+    // Our ICS files live under /public/
+    const base = baseUrl();
+    const https = new URL('public/' + file, base).toString();
+
+    // Apple/iOS/Outlook desktop use webcal://
+    const webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
+
+    // Google Calendar expects ?cid=<https url>
+    const google = 'https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(https);
+
+    // Outlook.com subscription composer
+    const outlook = 'https://outlook.live.com/owa?path=/calendar/action/compose&rru=addsubscription'
+                  + '&url=' + encodeURIComponent(https)
+                  + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+
+    btnApple.href   = webcal;
+    btnGoogle.href  = google;
+    btnOutlook.href = outlook;
+
+    directCode.textContent = https;
+  }}
+
+  sel.addEventListener('change', updateLinks);
+  updateLinks(); // init
 </script>
 </body>
 </html>
 """
     with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f:
         f.write(index_html)
-
-    print("Built calendars:", [fn for _, fn, _ in built] + ["calendar-all.ics"])
-    print("Wrote public/index.html")
-    # Create a small robots.txt to be nice
-    with open(os.path.join(outdir, "robots.txt"), "w", encoding="utf-8") as f:
-        f.write("User-agent: *\nAllow: /\n")
 
 if __name__ == "__main__":
     main()
