@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, hashlib, sys
+import os, hashlib, sys, json
 import pandas as pd
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -60,23 +60,19 @@ def make_uid(fields):
     h = hashlib.sha1("|".join(str(x) for x in fields).encode("utf-8")).hexdigest()[:16]
     return f"{h}@github-pages"
 
-# --- RFC5545 folding: 75-octet soft-wrap with CRLF + SP continuation ---
+# ---------- RFC5545 folding (75 octets per line, CRLF) ----------
 def fold_ical_line(line: str, limit: int = 75) -> list[str]:
-    # Encode as UTF-8 bytes to count octets; fold at <= limit
     b = line.encode("utf-8")
     out = []
     while len(b) > limit:
-        # find last safe split within limit to avoid cutting multibyte char
         cut = limit
-        while cut > 0 and (b[cut] & 0xC0) == 0x80:  # UTF-8 continuation byte
+        while cut > 0 and (b[cut] & 0xC0) == 0x80:  # avoid splitting UTF-8 mid-char
             cut -= 1
         out.append(b[:cut].decode("utf-8"))
         b = b[cut:]
-        # continuation lines start with a single space (added later on join)
-        out.append(" ")  # marker; we'll merge with next chunk
+        out.append(" ")  # continuation marker (will be merged)
     if b:
         out.append(b.decode("utf-8"))
-    # merge markers with following chunk
     merged = []
     i = 0
     while i < len(out):
@@ -157,9 +153,9 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
         add_prop(lines, "END:VEVENT")
 
     add_prop(lines, "END:VCALENDAR")
-    # Join with CRLF as per RFC5545
     return "\r\n".join(lines) + "\r\n"
 
+# ------------------------- MAIN -------------------------
 def main():
     csv_url = os.environ.get("CSV_URL", "").strip()
     if not csv_url:
@@ -197,37 +193,42 @@ def main():
 
     feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}]
     feeds += [{"label": cat, "file": fn, "count": count} for (cat, fn, count) in built]
+    feeds_json = json.dumps(feeds, ensure_ascii=False)
 
-    # Landing page (same look & buttons as before), but Google link is computed client-side
-    index_html = f"""<!doctype html>
+    # HTML template with a safe placeholder token (no Python f-string here)
+    HTML_TEMPLATE = r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Subscribe to Calendars</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root {{
+  :root {
     --orange: #F05A28; --maroon: #4B0A14; --cream: #F6F2EC;
     --ink: #111; --muted: #666; --card: #fff; --stroke: #e3dfda;
-  }}
-  * {{ box-sizing: border-box; }} body {{ margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color:var(--ink); background: linear-gradient(180deg, var(--cream), #fff 40%); }}
-  header {{ background:var(--maroon); color:#fff; padding:18px 22px; }}
-  header .brand {{ display:flex; gap:12px; align-items:center; font-weight:700; letter-spacing:.3px; }}
-  header .dot {{ width:10px; height:10px; border-radius:50%; background:var(--orange); }}
-  main {{ padding:28px 22px; }} .card {{ max-width:980px; margin:0 auto; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:22px; box-shadow:0 6px 20px rgba(0,0,0,.05); }}
-  h1 {{ margin:0 0 10px; font-size:28px; }} .lead {{ color:var(--muted); margin:0 0 18px; }}
-  .row {{ margin:16px 0; }} label {{ font-weight:600; margin-right:8px; }}
-  select {{ font-size:16px; padding:8px 10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; }}
-  .grid {{ display:grid; gap:18px; grid-template-columns:1fr; }} @media(min-width:820px){{
-    .grid {{ grid-template-columns:1.2fr .8fr; }}
-  }}
-  .btns {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }}
-  a.button {{ display:inline-flex; align-items:center; gap:10px; padding:10px 14px; border-radius:12px; text-decoration:none; border:1px solid var(--stroke); background:#fff; color:var(--ink); transition: transform .05s ease, box-shadow .2s ease; }}
-  a.button:hover {{ transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,.08); }}
-  .button.google {{ border-color:#DADCE0; }} .button.apple {{ border-color:#D1D1D1; }} .button.outlook {{ border-color:#C7DCF7; }}
-  small {{ color:var(--muted); }} code {{ background:#faf7f3; padding:4px 6px; border-radius:8px; border:1px solid var(--stroke); }}
-  .aside {{ border-left:1px dashed var(--stroke); padding-left:18px; }}
-  .kicker {{ color:var(--orange); font-weight:700; font-size:12px; letter-spacing:.6px; }}
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color:var(--ink); background: linear-gradient(180deg, var(--cream), #fff 40%); }
+  header { background:var(--maroon); color:#fff; padding:18px 22px; }
+  header .brand { display:flex; gap:12px; align-items:center; font-weight:700; letter-spacing:.3px; }
+  header .dot { width:10px; height:10px; border-radius:50%; background: var(--orange); }
+  main { padding:28px 22px; }
+  .card { max-width:980px; margin:0 auto; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:22px; box-shadow:0 6px 20px rgba(0,0,0,.05); }
+  h1 { margin:0 0 10px; font-size:28px; }
+  .lead { color:var(--muted); margin:0 0 18px; }
+  .row { margin:16px 0; }
+  label { font-weight:600; margin-right:8px; }
+  select { font-size:16px; padding:8px 10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; }
+  .grid { display:grid; gap:18px; grid-template-columns:1fr; }
+  @media(min-width:820px){ .grid { grid-template-columns:1.2fr .8fr; } }
+  .btns { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+  a.button { display:inline-flex; align-items:center; gap:10px; padding:10px 14px; border-radius:12px; text-decoration:none; border:1px solid var(--stroke); background:#fff; color:var(--ink); transition: transform .05s ease, box-shadow .2s ease; }
+  a.button:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,.08); }
+  .button.google { border-color:#DADCE0; } .button.apple { border-color:#D1D1D1; } .button.outlook { border-color:#C7DCF7; }
+  small { color:var(--muted); }
+  code { background:#faf7f3; padding:4px 6px; border-radius:8px; border:1px solid var(--stroke); }
+  .aside { border-left:1px dashed var(--stroke); padding-left:18px; }
+  .kicker { color:var(--orange); font-weight:700; font-size:12px; letter-spacing:.6px; }
 </style>
 </head>
 <body>
@@ -238,7 +239,9 @@ def main():
         <div class="kicker">LIVE FEEDS</div>
         <h1>Subscribe to a calendar</h1>
         <p class="lead">Pick a category, then choose your calendar app. These are <strong>live subscriptions</strong>, not downloads.</p>
+
         <div class="row"><label for="cal">Calendar:</label><select id="cal"></select></div>
+
         <div class="row">
           <div class="btns">
             <a id="btn-apple" class="button apple" href="#" title="Subscribe in Apple Calendar / iOS / Outlook desktop">
@@ -248,6 +251,7 @@ def main():
                 <rect x="7" y="2" width="2" height="4" rx="1" fill="#555"/><rect x="15" y="2" width="2" height="4" rx="1" fill="#555"/>
                 <rect x="6" y="11" width="12" height="7" fill="var(--orange)" opacity=".9"/>
               </svg><span>Apple / iOS / Outlook (desktop)</span></a>
+
             <a id="btn-google" class="button google" href="#" target="_blank" rel="noopener" title="Add by URL in Google Calendar">
               <svg width="18" height="18" viewBox="0 0 256 262" aria-hidden="true">
                 <path fill="#4285F4" d="M255.9 133.5c0-10.6-.9-18.3-2.8-26.3H130v47.7h71.9c-1.4 11.9-9 29.8-25.9 41.8l-.2 1.6 37.6 29.1 2.6.3c23.8-22 39.9-54.4 39.9-94.2"/>
@@ -255,11 +259,13 @@ def main():
                 <path fill="#FBBC05" d="M53.6 152.7c-2.8-8-4.4-16.6-4.4-25.4 0-8.9 1.6-17.5 4.2-25.4l-.1-1.7-42-32.4-1.4.7C3.3 88.5 0 108.7 0 127.3s3.3 38.8 9.7 55.2l43.9-29.8"/>
                 <path fill="#EA4335" d="M130 50.5c25.2 0 42.2 10.9 51.9 20l37.8-36.9C196.5 13.7 166.3 0 130 0 77.9 0 31.8 29.6 9.7 72.1l43.9 29.8C64.3 74.3 94.4 50.5 130 50.5"/>
               </svg><span>Google Calendar (web)</span></a>
+
             <a id="btn-outlookcom" class="button outlook" href="#" target="_blank" rel="noopener" title="Subscribe in Outlook.com (personal)">
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="2" y="6" width="10" height="12" fill="#0A64D8"/><rect x="10" y="6" width="12" height="12" fill="#0F7BFF" opacity=".85"/>
                 <circle cx="9" cy="12" r="3" fill="#fff"/>
               </svg><span>Outlook.com (personal)</span></a>
+
             <a id="btn-o365" class="button outlook" href="#" target="_blank" rel="noopener" title="Subscribe in Outlook 365 (work/school)">
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="2" y="6" width="10" height="12" fill="#0A64D8"/><rect x="10" y="6" width="12" height="12" fill="#0F7BFF" opacity=".85"/>
@@ -269,6 +275,7 @@ def main():
           <p class="lead"><small>Google adds feeds under <em>Other calendars</em>. Apple may show a trust prompt the first time.</small></p>
         </div>
       </section>
+
       <aside class="aside">
         <div class="kicker">LINKS</div>
         <div class="row"><p><strong>Subscribe URL (webcal):</strong><br><code id="sub-url"></code></p><p><small>Use this to subscribe in apps that accept <code>webcal://</code>.</small></p></div>
@@ -278,7 +285,9 @@ def main():
   </main>
 
 <script>
-  const FEEDS = {feeds};
+  // FEEDS will be injected below by Python safely as JSON:
+  const FEEDS = /*__FEEDS__*/;
+
   const sel = document.getElementById('cal');
   const btnApple = document.getElementById('btn-apple');
   const btnGoogle = document.getElementById('btn-google');
@@ -287,7 +296,7 @@ def main():
   const subCode = document.getElementById('sub-url');
   const dlCode  = document.getElementById('dl-url');
 
-  FEEDS.forEach(f => {
+  FEEDS.forEach(function(f) {
     const opt = document.createElement('option');
     opt.value = f.file;
     opt.textContent = f.label + (typeof f.count === 'number' ? ' (' + f.count + ')' : '');
@@ -309,7 +318,7 @@ def main():
     const parts = u.pathname.split('/').filter(Boolean);
     const repo  = parts.length > 0 ? parts[0] : '';
     if (!repo) {
-      // If it's a user/organization site without repo path, fallback to Pages URL
+      // If user/organization site without repo path, fallback to Pages URL
       return new URL(icsFile, canonicalBase()).toString();
     }
     return `https://raw.githubusercontent.com/${owner}/${repo}/gh-pages/public/${icsFile}`;
@@ -348,6 +357,8 @@ def main():
 </body>
 </html>
 """
+
+    index_html = HTML_TEMPLATE.replace("/*__FEEDS__*/", feeds_json)
     with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8", newline="") as outf:
         outf.write(index_html)
 
