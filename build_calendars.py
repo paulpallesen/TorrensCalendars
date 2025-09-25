@@ -165,14 +165,11 @@ def main():
     if "Calendar" not in df.columns:
         df["Calendar"] = "General"
 
-    # Normalize empty calendar names
     df["Calendar"] = df["Calendar"].fillna("General").apply(lambda x: x if str(x).strip() else "General")
 
-    # Output dir
     outdir = "public"
     os.makedirs(outdir, exist_ok=True)
 
-    # Build one ICS per Calendar + a combined "All"
     categories = sorted(df["Calendar"].dropna().unique().tolist())
     built = []
 
@@ -185,12 +182,10 @@ def main():
             outf.write(ics)
         built.append((cat, fname, len(sub)))
 
-    # Combined feed
     ics_all = build_ics_for_group(df, DEFAULT_TZ, "All")
     with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8", newline="") as outf:
         outf.write(ics_all)
 
-    # Build landing page (dropdown + buttons)
     feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}]
     feeds += [{"label": cat, "file": fn, "count": count} for (cat, fn, count) in built]
 
@@ -222,11 +217,11 @@ def main():
       <p><strong>Subscribe with:</strong></p>
       <p>
         <a id="btn-apple"      class="button" href="#">Apple / iOS / Outlook (desktop)</a>
-        <a id="btn-google"     class="button" href="#" target="_blank">Google Calendar (web)</a>
-        <a id="btn-outlookcom" class="button" href="#" target="_blank">Outlook.com (personal)</a>
-        <a id="btn-o365"       class="button" href="#" target="_blank">Outlook 365 (work/school)</a>
+        <a id="btn-google"     class="button" href="#" target="_blank" rel="noopener">Google Calendar (web)</a>
+        <a id="btn-outlookcom" class="button" href="#" target="_blank" rel="noopener">Outlook.com (personal)</a>
+        <a id="btn-o365"       class="button" href="#" target="_blank" rel="noopener">Outlook 365 (work/school)</a>
       </p>
-      <p><small>These are live subscriptions (not downloads). In Google Calendar the feed appears under <em>Other calendars</em>.</small></p>
+      <p><small>Google Calendar adds feeds under <em>Other calendars</em>. Outlook.com/365 should open a subscription dialog.</small></p>
     </div>
 
     <div class="row">
@@ -236,17 +231,7 @@ def main():
   </div>
 
 <script>
-  // Feeds provided by the build script:
   const FEEDS = {feeds};
-
-  // Compute base URL for this page (works at repo subpaths)
-  function baseUrl() {{
-    const u = new URL(window.location.href);
-    if (!u.pathname.endsWith('/')) {{
-      u.pathname = u.pathname.substring(0, u.pathname.lastIndexOf('/') + 1);
-    }}
-    return u;
-  }}
 
   const sel           = document.getElementById('cal');
   const btnApple      = document.getElementById('btn-apple');
@@ -255,7 +240,6 @@ def main():
   const btnO365       = document.getElementById('btn-o365');
   const directCode    = document.getElementById('direct-url');
 
-  // Populate dropdown
   FEEDS.forEach(function(f) {{
     var opt = document.createElement('option');
     opt.value = f.file;
@@ -265,27 +249,18 @@ def main():
 
   function updateLinks() {{
     var file  = sel.value;
-    var base  = baseUrl();
-    var https = new URL('public/' + file, base).toString();
+    var https = new URL(file, window.location.href).toString();
 
-    // SECURE webcal to avoid macOS "insecure connection"
-    var hostOnly = https.replace(/^https?:\\/\\//, '');
-    var webcals  = 'webcals://' + hostOnly;
-
-    // Google Calendar (adds by URL under "Other calendars")
+    var webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
     var google = 'https://calendar.google.com/calendar/u/0/r?cid=' + encodeURIComponent(https);
-
-    // Outlook.com (personal)
     var outlookCom = 'https://outlook.live.com/calendar/0/addfromweb'
                    + '?url='  + encodeURIComponent(https)
                    + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
-
-    // Outlook 365 (work/school)
     var o365 = 'https://outlook.office.com/calendar/0/addfromweb'
              + '?url='  + encodeURIComponent(https)
              + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
 
-    btnApple.href      = webcals;
+    btnApple.href      = webcal;
     btnGoogle.href     = google;
     btnOutlookCom.href = outlookCom;
     btnO365.href       = o365;
@@ -294,7 +269,7 @@ def main():
   }}
 
   sel.addEventListener('change', updateLinks);
-  updateLinks(); // init
+  updateLinks();
 </script>
 </body>
 </html>
