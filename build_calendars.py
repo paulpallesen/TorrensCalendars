@@ -187,9 +187,9 @@ def main():
 
 <style>
   :root {
-    --bg: #ffffff;
-    --page: #f6f7f9;
-    --text: #222;
+    --bg: #420318;
+    --page: #f6f3e7;
+    --text: #ffff;
     --border: #ddd;
     --apple: #979797;
     --google: #ea4236;
