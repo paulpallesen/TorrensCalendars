@@ -94,11 +94,9 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
 
     for _, r in df.iterrows():
         title = str(r.get("Title", "") or "").strip()
-        if not title:
-            continue
+        if not title: continue
         sdate = r.get("Start Date")
-        if not _to_date(sdate):
-            continue
+        if not _to_date(sdate): continue
 
         uid = str(r.get("UID", "") or "")
         stime = r.get("Start Time") or ""
@@ -156,16 +154,14 @@ def main():
 
     if "Calendar" not in df.columns:
         df["Calendar"] = "General"
-
     df["Calendar"] = df["Calendar"].fillna("General").apply(lambda x: x if str(x).strip() else "General")
 
     outdir = "public"
     os.makedirs(outdir, exist_ok=True)
 
-    # Build per-calendar ICS files
+    # Per-calendar ICS + list for UI
     categories = sorted(df["Calendar"].dropna().unique().tolist())
     feeds = []
-
     for cat in categories:
         sub = df[df["Calendar"] == cat].copy()
         ics = build_ics_for_group(sub, DEFAULT_TZ, cat)
@@ -181,7 +177,7 @@ def main():
         fh.write(ics_all)
     feeds.insert(0, {"label": "All (combined)", "file": "calendar-all.ics", "count": int(len(df))})
 
-    # Page HTML (NOT an f-string) – we inject JSON at the very end to avoid brace escaping hell.
+    # Simple neutral UI with distinct button colors; not an f-string (so braces are safe).
     html_template = """<!doctype html>
 <html lang="en">
 <head>
@@ -191,71 +187,45 @@ def main():
 
 <style>
   :root {
-    --brand-maroon: #5c1130;
-    --brand-beige: #f8f5f2;
+    --bg: #ffffff;
+    --page: #f6f7f9;
     --text: #222;
-    --border: #ccc;
+    --border: #ddd;
+    --apple: #333333;
+    --google: #1a73e8;
+    --outlook: #0078d4;
   }
-  body {
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    margin: 2rem;
-    background: var(--brand-beige);
-  }
-  .card {
-    max-width: 800px;
-    padding: 1.5rem;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: #fff;
-  }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; background: var(--page); color: var(--text); }
+  .card { max-width: 820px; padding: 1.5rem; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
   .row { margin: 1rem 0; }
-  a.button {
-    display:inline-block; padding:.6rem .9rem; margin-right:.5rem; text-decoration:none;
-    border:1px solid var(--border); border-radius:8px; background: var(--brand-maroon); color:#fff;
-  }
-  a.button:hover { opacity: .92; }
-  code { background:#f6f6f6; padding:.2rem .4rem; border-radius:6px; }
-
-  /* Banner-style dropdown row */
-  .row.dropdown {
-    background: var(--brand-maroon);
-    padding: 1rem;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-  .row.dropdown label {
-    color: #fff; font-weight: 700; margin: 0; white-space: nowrap;
-  }
-  .row.dropdown select {
-    background: var(--brand-beige); color: var(--text);
-    padding: .6rem .8rem; border: 1px solid var(--border); border-radius: 10px;
-    font-size: 1rem; width: 33%; min-width: 220px;
-  }
+  .controls { display:flex; align-items:center; gap: .75rem; }
+  label { font-weight: 600; }
+  select { padding: .55rem .7rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; width: 33%; min-width: 220px; background:#fff; }
+  .btn { display:inline-block; padding:.6rem .9rem; margin-right:.5rem; text-decoration:none; color:#fff; border-radius:8px; }
+  .btn-apple { background: var(--apple); }
+  .btn-google { background: var(--google); }
+  .btn-outlook { background: var(--outlook); }
+  code { background:#f1f3f5; padding:.2rem .4rem; border-radius:6px; }
 </style>
 </head>
 <body>
   <div class="card">
     <h1>Subscribe to a Calendar</h1>
 
-    <div class="row dropdown">
-      <label for="cal">Select a calendar:</label>
+    <div class="row controls">
+      <label for="cal">Calendar:</label>
       <select id="cal"></select>
     </div>
 
     <div class="row">
-      <p><strong>Subscribe with:</strong></p>
-      <p>
-        <a id="btn-apple"   class="button" href="#">Apple Calendar (macOS / iOS)</a>
-        <a id="btn-google"  class="button" href="#" target="_blank">Google Calendar</a>
-        <a id="btn-outlook" class="button" href="#" target="_blank">Outlook Work/Study</a>
-      </p>
-      <p><small>These are live subscriptions. Apps refresh on their own schedule.</small></p>
+      <strong>Subscribe with:</strong><br>
+      <a id="btn-apple"   class="btn btn-apple"   href="#">Apple Calendar</a>
+      <a id="btn-google"  class="btn btn-google"  href="#" target="_blank">Google Calendar</a>
+      <a id="btn-outlook" class="btn btn-outlook" href="#" target="_blank">Outlook (Work/Study)</a>
     </div>
 
     <div class="row">
-      <p><strong>Direct feed URL:</strong> <code id="direct-url"></code></p>
+      <strong>Direct feed URL:</strong> <code id="direct-url"></code>
     </div>
   </div>
 
@@ -271,13 +241,13 @@ def main():
     return u;
   }
 
-  const sel        = document.getElementById('cal');
+  const sel = document.getElementById('cal');
   const btnApple   = document.getElementById('btn-apple');
   const btnGoogle  = document.getElementById('btn-google');
   const btnOutlook = document.getElementById('btn-outlook');
   const directCode = document.getElementById('direct-url');
 
-  // Populate dropdown with counts
+  // Populate dropdown
   FEEDS.forEach(feed => {
     const opt = document.createElement('option');
     opt.value = feed.file;
@@ -287,19 +257,19 @@ def main():
 
   function updateLinks() {
     const file = sel.value;
+    const label = sel.options[sel.selectedIndex].text;
     const base = baseUrl();
     const https = new URL('public/' + file, base).toString();
 
     // Apple/macOS/iOS & Outlook desktop via webcal
     const webcal  = 'webcal://' + https.replace(/^https?:\/\//, '');
 
-    // Google "add by URL" prefill (works for most users *when signed in*)
+    // Google add-by-URL prefill (stays on Google's site)
     const google  = 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(https);
 
-    // Outlook Work/Study (Office365 / outlook.office.com)
-    const outlook = 'https://outlook.office.com/calendar/0/add?url='
-                    + encodeURIComponent(https)
-                    + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+    // Outlook Work/Study (Office 365)
+    const outlook = 'https://outlook.office.com/calendar/0/add?url=' + encodeURIComponent(https) +
+                    '&name=' + encodeURIComponent(label);
 
     btnApple.href   = webcal;
     btnGoogle.href  = google;
@@ -314,7 +284,6 @@ def main():
 </html>
 """
 
-    # Inject JSON safely (no f-string)
     html_out = html_template.replace("__FEEDS_JSON__", json.dumps(feeds, ensure_ascii=False))
 
     with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as fh:
