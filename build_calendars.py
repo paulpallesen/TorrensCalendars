@@ -159,7 +159,6 @@ def main():
     outdir = "public"
     os.makedirs(outdir, exist_ok=True)
 
-    # Per-calendar ICS + list for UI
     categories = sorted(df["Calendar"].dropna().unique().tolist())
     feeds = []
     for cat in categories:
@@ -171,143 +170,90 @@ def main():
             fh.write(ics)
         feeds.append({"label": cat, "file": fname, "count": int(len(sub))})
 
-    # Combined "All"
     ics_all = build_ics_for_group(df, DEFAULT_TZ, "All")
     with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8", newline="") as fh:
         fh.write(ics_all)
     feeds.insert(0, {"label": "All (combined)", "file": "calendar-all.ics", "count": int(len(df))})
 
-    # UI template (not a Python f-string)
+    # FUNCTIONALITY-FIRST TEMPLATE (neutral skin; working links)
     html_template = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Subscribe to Calendars</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
 <style>
   :root {
-    --page: #f6f3e7;     /* light page */
-    --card: #420318;     /* dark maroon panel */
-    --text: #ffffff;     /* text on card */
-    --border: #6e2236;
-
-    /* Brand button colors (do not change per user request) */
+    --page: #f6f3e7;   /* light background */
+    --card: #420318;  /* maroon card */
+    --text: #ffffff;
     --apple:  #979797;
     --google: #ea4236;
     --outlook:#0077da;
-
-    --input-bg: #ffffff;
-    --input-text: #222222;
   }
-
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; background: var(--page); color: var(--text); }
-  .card { max-width: 980px; padding: 1.75rem; border: 1px solid var(--border); border-radius: 16px; background: var(--card); box-shadow: 0 6px 18px rgba(0,0,0,.12); }
-  h1 { margin: 0 0 1rem 0; font-size: 2.2rem; }
-
-  .row { margin: 1.1rem 0; }
-  .controls { display:flex; align-items:center; gap: .9rem; }
-  .controls label { font-weight: 700; min-width: 115px; }
-
+  .card { max-width: 900px; padding: 1.5rem; border-radius: 14px; background: var(--card); }
+  h1 { margin: 0 0 1rem 0; font-size: 2rem; }
+  .row { margin: 1rem 0; }
+  .controls { display:flex; align-items:center; gap: .75rem; }
+  .controls label { font-weight: 700; min-width: 110px; }
   select {
-    padding: .6rem .8rem;
-    border: 1px solid rgba(255,255,255,.25);
-    border-radius: 10px;
-    font-size: 1rem;
-    width: 340px;              /* fixed width to avoid layout jump */
-    background: var(--input-bg);
-    color: var(--input-text);
-    outline: none;
+    padding: .55rem .7rem; border-radius: 10px; font-size: 1rem;
+    width: 320px; background: #fff; color: #222; border: 1px solid rgba(255,255,255,.25);
   }
-  select:focus { box-shadow: 0 0 0 3px rgba(255,255,255,.15); }
-
-  .btn { display:inline-block; padding:.65rem 1rem; margin-right:.6rem; text-decoration:none; color:#fff; border-radius:10px; font-weight:600; }
+  .btn { display:inline-block; padding:.6rem .95rem; margin-right:.5rem; text-decoration:none; color:#fff; border-radius:10px; font-weight:600; }
   .btn-apple  { background: var(--apple); }
   .btn-google { background: var(--google); }
   .btn-outlook{ background: var(--outlook); }
-
-  code {
-    display:inline-block;
-    background: var(--input-bg);
-    color: var(--input-text);
-    padding:.35rem .5rem;
-    border-radius:8px;
-    border: 1px solid rgba(0,0,0,.08);
-    max-width: 100%;
-    overflow-x: auto;
-    white-space: nowrap;
-    cursor: pointer; /* click to copy */
-  }
-
-  /* Tiny toast for “copied” feedback */
-  #toast {
-    position: fixed;
-    left: 50%;
-    bottom: 24px;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,.8);
-    color: #fff;
-    padding: .55rem .8rem;
-    border-radius: 8px;
-    font-size: .9rem;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .2s ease;
-  }
-  #toast.show { opacity: 1; }
+  code { display:inline-block; background:#fff; color:#222; padding:.3rem .45rem; border-radius:8px; border:1px solid rgba(0,0,0,.1); cursor:pointer; white-space:nowrap; }
+  #toast { position: fixed; left:50%; bottom:24px; transform:translateX(-50%); background: rgba(0,0,0,.85); color:#fff; padding:.5rem .75rem; border-radius:8px; font-size:.9rem; opacity:0; transition:opacity .2s ease; }
+  #toast.show { opacity:1; }
 </style>
 </head>
 <body>
   <div class="card">
     <h1>Subscribe to a Calendar</h1>
-
     <div class="row controls">
       <label for="cal">Calendar:</label>
       <select id="cal"></select>
     </div>
-
     <div class="row">
       <strong>Subscribe with:</strong><br>
       <a id="btn-apple"   class="btn btn-apple"   href="#">Apple Calendar</a>
       <a id="btn-google"  class="btn btn-google"  href="#">Google Calendar</a>
-      <a id="btn-outlook" class="btn btn-outlook" href="#" target="_blank" rel="noopener">Outlook (Work/Study)</a>
+      <a id="btn-outlook" class="btn btn-outlook" href="#">Outlook (Work/Study)</a>
     </div>
-
     <div class="row">
-      <strong>Direct feed URL:</strong>
-      <code id="direct-url" title="Click to copy"></code>
+      <strong>Direct feed URL:</strong> <code id="direct-url" title="Click to copy"></code>
     </div>
   </div>
-
-  <div id="toast">Copied to clipboard</div>
+  <div id="toast">Copied</div>
 
 <script>
-  // Feeds injected from Python:
   const FEEDS = __FEEDS_JSON__;
 
-  // Build a correct absolute URL to /public/*.ics without ever producing /public/public/
-  function icsUrl(file) {
-    const origin = window.location.origin;
-    let path = window.location.pathname;
-    if (!path.endsWith('/')) path = path.slice(0, path.lastIndexOf('/') + 1);
-    if (path.endsWith('/public/')) return origin + path + file;
-    return origin + path + 'public/' + file;
-  }
-
-  const sel        = document.getElementById('cal');
+  const sel = document.getElementById('cal');
   const btnApple   = document.getElementById('btn-apple');
   const btnGoogle  = document.getElementById('btn-google');
   const btnOutlook = document.getElementById('btn-outlook');
   const directCode = document.getElementById('direct-url');
   const toast      = document.getElementById('toast');
 
-  function showToast(msg='Copied to clipboard') {
+  function showToast(msg) {
     toast.textContent = msg;
     toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 1400);
+    setTimeout(() => toast.classList.remove('show'), 1500);
   }
 
-  // Populate dropdown
+  // Since index.html and .ics live in the same folder (/public/), just resolve the filename against this page:
+  function icsUrl(file) {
+    const base = new URL(window.location.href);
+    if (base.pathname.endsWith('/index.html')) {
+      base.pathname = base.pathname.slice(0, -'index.html'.length);
+    }
+    return new URL(file, base).toString();
+  }
+
   FEEDS.forEach(f => {
     const opt = document.createElement('option');
     opt.value = f.file;
@@ -315,7 +261,6 @@ def main():
     sel.appendChild(opt);
   });
 
-  // Store latest URLs for click handlers
   let CURRENT = { https:'', label:'' };
 
   function updateLinks() {
@@ -323,34 +268,33 @@ def main():
     const label = sel.options[sel.selectedIndex].text;
     const https = icsUrl(file);
 
-    // Save for click handlers
-    CURRENT.https = https;
-    CURRENT.label = label;
+    CURRENT = { https, label };
+    // Apple/macOS/iOS & Outlook desktop (webcal)
+    btnApple.href = 'webcal://' + https.replace(/^https?:\\/\\//,'');
+    btnApple.target = '_self'; btnApple.rel = '';
 
-    // Apple/macOS/iOS & Outlook desktop via webcal
-    btnApple.href   = 'webcal://' + https.replace(/^https?:\/\//, '');
+    // Outlook (Work/Study) composer (pre-fills)
+    btnOutlook.href =
+      'https://outlook.office.com/owa/?path=/calendar/action/compose&rru=addsubscription'
+      + '&url='  + encodeURIComponent(https)
+      + '&name=' + encodeURIComponent(label);
+    btnOutlook.target = '_blank';
+    btnOutlook.rel = 'noopener';
 
-    // Set the direct feed text
+    // Direct URL visible & copyable
     directCode.textContent = https;
-
-    // Outlook (Work/Study) – subscription composer (this was the one that worked for you)
-    btnOutlook.href = 'https://outlook.office.com/owa/?path=/calendar/action/compose&rru=addsubscription'
-                    + '&url='  + encodeURIComponent(https)
-                    + '&name=' + encodeURIComponent(label);
   }
 
-  // Google: copy URL then open “Add by URL” page
+  // Google: copy to clipboard + open "Add by URL" page
   btnGoogle.addEventListener('click', async (e) => {
     e.preventDefault();
-    try { await navigator.clipboard.writeText(CURRENT.https); } catch(_) {}
+    try { await navigator.clipboard.writeText(CURRENT.https); } catch (_) {}
     showToast('Feed URL copied. Paste it in Google → Add by URL.');
-    const g = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl';
-    window.open(g, '_blank', 'noopener');
+    window.open('https://calendar.google.com/calendar/u/0/r/settings/addbyurl', '_blank', 'noopener');
   });
 
-  // Direct feed code: click to copy
   directCode.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(CURRENT.https); } catch(_) {}
+    try { await navigator.clipboard.writeText(CURRENT.https); } catch (_) {}
     showToast('Feed URL copied');
   });
 
@@ -360,11 +304,7 @@ def main():
 </body>
 </html>
 """
-
     html_out = html_template.replace("__FEEDS_JSON__", json.dumps(feeds, ensure_ascii=False))
-
-    outdir = "public"
-    os.makedirs(outdir, exist_ok=True)
     with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html_out)
 
