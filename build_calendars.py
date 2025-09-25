@@ -329,31 +329,49 @@ def main():
   }});
 
   function canonicalBase() {{
+    // Example page URL: https://<owner>.github.io/<repo>/public/index.html
     let href = window.location.href.split('#')[0].split('?')[0];
     if (href.endsWith('index.html')) href = href.slice(0, -'index.html'.length);
     if (!href.endsWith('/')) href += '/';
     return href;
   }}
 
+  function computeGoogleRawUrl(icsFile) {{
+    // Build https://raw.githubusercontent.com/<owner>/<repo>/gh-pages/public/<icsFile>
+    const u = new URL(canonicalBase());
+    const host = u.host;                     // <owner>.github.io
+    const owner = host.split('.')[0];        // <owner>
+    const parts = u.pathname.split('/').filter(Boolean);
+    const repo = parts.length > 0 ? parts[0] : ''; // <repo>
+    // Fallback: if repo is missing (user site), still return Pages URL
+    if (!repo) {{
+      return new URL(icsFile, canonicalBase()).toString();
+    }}
+    return `https://raw.githubusercontent.com/${{owner}}/${{repo}}/gh-pages/public/${{icsFile}}`;
+  }}
+
   function updateLinks() {{
-    var file   = sel.value;                       // e.g., calendar-student.ics
-    var base   = canonicalBase();                 // …/public/
-    var https  = new URL(file, base).toString();  // absolute https to .ics
-    var webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
+    const file   = sel.value;                       // e.g., calendar-student.ics
+    const base   = canonicalBase();                 // …/public/
+    const https  = new URL(file, base).toString();  // absolute https to Pages-hosted .ics
+    const webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
 
-    // Google: use /render?cid= (more tolerant)
-    var google = 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(https);
+    // Google: prefer the raw GitHub URL (no redirects, predictable headers)
+    const googleRaw = computeGoogleRawUrl(file);
+    const nocache   = Date.now().toString(); // helps Google refetch recent rebuilds
+    const googleAdd = 'https://calendar.google.com/calendar/render?cid='
+                    + encodeURIComponent(googleRaw + '?no-cache=' + nocache);
 
-    var outlookCom = 'https://outlook.live.com/calendar/0/addfromweb'
-                   + '?url='  + encodeURIComponent(https)
-                   + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+    const outlookCom = 'https://outlook.live.com/calendar/0/addfromweb'
+                     + '?url='  + encodeURIComponent(https)
+                     + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
 
-    var o365 = 'https://outlook.office.com/calendar/0/addfromweb'
-             + '?url='  + encodeURIComponent(https)
-             + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+    const o365 = 'https://outlook.office.com/calendar/0/addfromweb'
+               + '?url='  + encodeURIComponent(https)
+               + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
 
     btnApple.href      = webcal;
-    btnGoogle.href     = google;
+    btnGoogle.href     = googleAdd;
     btnOutlookCom.href = outlookCom;
     btnO365.href       = o365;
 
@@ -367,7 +385,7 @@ def main():
 </body>
 </html>
 """
-    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as outf:
+    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8", newline="") as outf:
         outf.write(index_html)
 
 if __name__ == "__main__":
