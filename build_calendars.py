@@ -222,26 +222,32 @@ def main():
   .row {{ margin: 1.2rem 0; }}
 
   /* Highlighted banner row for the dropdown */
-  .row.dropdown {{
-    background: var(--brand-maroon);
-    padding: 1rem;
-    border-radius: 10px;
-  }}
-  .row.dropdown label {{
-    color: #fff;
-    font-weight: 700;
-    margin-bottom: .5rem;
-    display:block;
-  }}
-  .row.dropdown select {{
-    background: var(--brand-beige);
-    color: var(--text);
-    padding: .6rem .8rem;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    font-size: 1rem;
-    width: 100%;
-  }}
+.row.dropdown {
+  background: var(--brand-maroon);
+  padding: 1rem;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1rem;
+}
+.row.dropdown label {
+  color: #fff;
+  font-weight: 700;
+  margin: 0;
+  white-space: nowrap;
+}
+.row.dropdown select {
+  background: var(--brand-beige);
+  color: var(--text);
+  padding: .6rem .8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 1rem;
+  width: 33%; /* Now only takes 1/3 of the row */
+  min-width: 220px; /* fallback so it’s not too tiny on narrow screens */
+}
+
 
   .buttons a {{
     display: inline-block;
