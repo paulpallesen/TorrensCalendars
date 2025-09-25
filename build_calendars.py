@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-import os, csv, hashlib, io, sys
+import os, hashlib, sys
 import pandas as pd
 from datetime import datetime, date, time, timedelta
-from collections import defaultdict
 
 DEFAULT_TZ = "Australia/Sydney"
 
@@ -26,10 +25,6 @@ END:VTIMEZONE
 """
 
 CAL_REQUIRED = ["Title", "Start Date"]
-CAL_OPTIONAL = [
-    "Calendar", "Start Time", "End Date", "End Time", "Location",
-    "Description", "URL", "Transparent", "UID"
-]
 
 def slugify(s: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "-" for ch in str(s)).strip("-") or "general"
@@ -85,7 +80,7 @@ def make_uid(fields):
 
 def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
     now_utc = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    
+
     lines = [
         "BEGIN:VCALENDAR",
         "PRODID:-//Dynamic Calendars//GitHub Pages//EN",
@@ -98,15 +93,15 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
         AUS_TZ_VTIMEZONE.strip()
     ]
 
-    event_count = 0
     for _, r in df.iterrows():
         title = str(r.get("Title", "") or "").strip()
-        if not title: continue
+        if not title:
+            continue
         sdate = r.get("Start Date")
-        if not _to_date(sdate): continue
+        if not _to_date(sdate):
+            continue
 
         uid = str(r.get("UID", "") or "")
-        course = ""  # optional column for course codes
         cat = str(r.get("Calendar", "") or "").strip()
         stime = r.get("Start Time") or ""
         edate = r.get("End Date") or ""
@@ -118,13 +113,12 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
 
         is_all_day = (not _to_time(stime) and not _to_time(etime))
         if not uid:
-            uid = make_uid([course, title, sdate, edate, stime, etime, location, cal_name])
+            uid = make_uid([title, sdate, edate, stime, etime, location, cal_name])
 
-        summary = f"{title}"
         lines.append("BEGIN:VEVENT")
         lines.append(f"UID:{uid}")
         lines.append(f"DTSTAMP:{now_utc}")
-        lines.append(f"SUMMARY:{ical_escape(summary)}")
+        lines.append(f"SUMMARY:{ical_escape(title)}")
         lines.append(f"TRANSP:{'TRANSPARENT' if is_transparent else 'OPAQUE'}")
         if location: lines.append(f"LOCATION:{ical_escape(location)}")
         if desc:     lines.append(f"DESCRIPTION:{ical_escape(desc)}")
@@ -151,7 +145,6 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
             lines.append(f"DTEND;TZID={tzid}:{fmt_local(dt_end)}")
 
         lines.append("END:VEVENT")
-        event_count += 1
 
     lines.append("END:VCALENDAR")
     return "\r\n".join(lines) + "\r\n"
@@ -188,14 +181,14 @@ def main():
         ics = build_ics_for_group(sub, DEFAULT_TZ, cat)
         slug = slugify(cat)
         fname = f"calendar-{slug}.ics"
-        with open(os.path.join(outdir, fname), "w", encoding="utf-8", newline="") as f:
-            f.write(ics)
+        with open(os.path.join(outdir, fname), "w", encoding="utf-8", newline="") as outf:
+            outf.write(ics)
         built.append((cat, fname, len(sub)))
 
     # Build combined
     ics_all = build_ics_for_group(df, DEFAULT_TZ, "All")
-    with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8", newline="") as f:
-        f.write(ics_all)
+    with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8", newline="") as outf:
+        outf.write(ics_all)
 
     # Build data for the page (All + each category)
     feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}]
@@ -261,29 +254,29 @@ def main():
   const directCode = document.getElementById('direct-url');
 
   // Populate dropdown
-  FEEDS.forEach(f => {{
-    const opt = document.createElement('option');
+  FEEDS.forEach(function(f) {{
+    var opt = document.createElement('option');
     opt.value = f.file;
-    opt.textContent = f.label + (typeof f.count === 'number' ? ` (${f.count})` : '');
+    opt.textContent = f.label + (typeof f.count === 'number' ? ' (' + f.count + ')' : '');
     sel.appendChild(opt);
   }});
 
   function updateLinks() {{
-    const file = sel.value;
+    var file = sel.value;
     // Our ICS files live under /public/
-    const base = baseUrl();
-    const https = new URL('public/' + file, base).toString();
+    var base = baseUrl();
+    var https = new URL('public/' + file, base).toString();
 
     // Apple/iOS/Outlook desktop use webcal://
-    const webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
+    var webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
 
     // Google Calendar expects ?cid=<https url>
-    const google = 'https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(https);
+    var google = 'https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(https);
 
     // Outlook.com subscription composer
-    const outlook = 'https://outlook.live.com/owa?path=/calendar/action/compose&rru=addsubscription'
-                  + '&url=' + encodeURIComponent(https)
-                  + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+    var outlook = 'https://outlook.live.com/owa?path=/calendar/action/compose&rru=addsubscription'
+                + '&url=' + encodeURIComponent(https)
+                + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
 
     btnApple.href   = webcal;
     btnGoogle.href  = google;
@@ -298,8 +291,8 @@ def main():
 </body>
 </html>
 """
-    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f:
-        f.write(index_html)
+    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as outf:
+        outf.write(index_html)
 
 if __name__ == "__main__":
     main()
