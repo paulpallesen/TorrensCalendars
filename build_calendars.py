@@ -1,28 +1,10 @@
 #!/usr/bin/env python3
 import os, hashlib, sys
 import pandas as pd
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
-DEFAULT_TZ = "Australia/Sydney"
-
-AUS_TZ_VTIMEZONE = """BEGIN:VTIMEZONE
-TZID:Australia/Sydney
-BEGIN:STANDARD
-DTSTART:19700405T030000
-TZOFFSETFROM:+1100
-TZOFFSETTO:+1000
-TZNAME:AEST
-RRULE:FREQ=YEARLY;BYMONTH=4;BYDAY=1SU
-END:STANDARD
-BEGIN:DAYLIGHT
-DTSTART:19701004T020000
-TZOFFSETFROM:+1000
-TZOFFSETTO:+1100
-TZNAME:AEDT
-RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=1SU
-END:DAYLIGHT
-END:VTIMEZONE
-"""
+DEFAULT_TZ = "Australia/Sydney"  # source timezone for your sheet times
 
 CAL_REQUIRED = ["Title", "Start Date"]
 
@@ -36,11 +18,12 @@ def ical_escape(s: str) -> str:
             .replace(";", "\\;")
             .replace("\n", "\\n"))
 
-def fmt_local(dt: datetime) -> str:
-    return dt.strftime("%Y%m%dT%H%M%S")
-
 def fmt_date(d: date) -> str:
     return d.strftime("%Y%m%d")
+
+def fmt_utc(dt: datetime) -> str:
+    # dt must be timezone-aware in UTC
+    return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 def _to_date(val):
     if val is None or val == "": return None
@@ -64,11 +47,13 @@ def _to_time(val):
     try: return datetime.fromisoformat(s).time().replace(second=0, microsecond=0)
     except Exception: return None
 
-def parse_datetime(d_val, t_val):
+def parse_local_datetime(d_val, t_val, tzid: str):
+    """Return timezone-aware datetime in tzid from sheet values (or None)."""
     d = _to_date(d_val)
     if not d: return None
     t = _to_time(t_val) or time(0, 0, 0)
-    return datetime(d.year, d.month, d.day, t.hour, t.minute, 0)
+    tz = ZoneInfo(tzid)
+    return datetime(d.year, d.month, d.day, t.hour, t.minute, 0, tzinfo=tz)
 
 def truthy(val) -> bool:
     if val is None: return False
@@ -79,8 +64,9 @@ def make_uid(fields):
     return f"{h}@github-pages"
 
 def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
-    now_utc = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    now_utc = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
+    # Emit UTC times only (no VTIMEZONE) for maximum compatibility with Google
     lines = [
         "BEGIN:VCALENDAR",
         "PRODID:-//Dynamic Calendars//GitHub Pages//EN",
@@ -88,17 +74,15 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
         f"X-WR-CALNAME:{ical_escape(cal_name)}",
-        f"X-WR-TIMEZONE:{tzid}",
-        "X-PUBLISHED-TTL:PT12H",
-        AUS_TZ_VTIMEZONE.strip()
+        "X-PUBLISHED-TTL:PT12H"
     ]
 
     for _, r in df.iterrows():
         title = str(r.get("Title", "") or "").strip()
-        if not title:
+        if not title: 
             continue
         sdate = r.get("Start Date")
-        if not _to_date(sdate):
+        if not _to_date(sdate): 
             continue
 
         uid = str(r.get("UID", "") or "")
@@ -136,13 +120,13 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
             lines.append(f"DTSTART;VALUE=DATE:{fmt_date(start_d)}")
             lines.append(f"DTEND;VALUE=DATE:{fmt_date(end_excl)}")
         else:
-            dt_start = parse_datetime(sdate, stime)
-            dt_end   = parse_datetime(edate or sdate, etime or stime or "00:00")
-            if not dt_start or not dt_end:
+            dt_start_local = parse_local_datetime(sdate, stime, tzid)
+            dt_end_local   = parse_local_datetime(edate or sdate, etime or stime or "00:00", tzid)
+            if not dt_start_local or not dt_end_local:
                 lines.append("END:VEVENT")
                 continue
-            lines.append(f"DTSTART;TZID={tzid}:{fmt_local(dt_start)}")
-            lines.append(f"DTEND;TZID={tzid}:{fmt_local(dt_end)}")
+            lines.append(f"DTSTART:{fmt_utc(dt_start_local)}")
+            lines.append(f"DTEND:{fmt_utc(dt_end_local)}")
 
         lines.append("END:VEVENT")
 
@@ -157,7 +141,6 @@ def main():
 
     df = pd.read_csv(csv_url)
 
-    # Ensure required columns exist
     for c in CAL_REQUIRED:
         if c not in df.columns:
             raise SystemExit(f"Missing required column: {c}")
@@ -189,7 +172,6 @@ def main():
     feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}]
     feeds += [{"label": cat, "file": fn, "count": count} for (cat, fn, count) in built]
 
-    # --- Themed landing page with official-ish buttons and robust links ---
     index_html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -198,12 +180,12 @@ def main():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {{
-    --orange: #F05A28;      /* Torrens orange */
-    --maroon: #4B0A14;      /* deep header accent */
-    --cream:  #F6F2EC;      /* soft background */
-    --ink:    #111111;
-    --muted:  #666666;
-    --card:   #ffffff;
+    --orange: #F05A28;
+    --maroon: #4B0A14;
+    --cream:  #F6F2EC;
+    --ink:    #111;
+    --muted:  #666;
+    --card:   #fff;
     --stroke: #e3dfda;
   }}
   * {{ box-sizing: border-box; }}
@@ -214,15 +196,10 @@ def main():
     background: linear-gradient(180deg, var(--cream), #fff 40%);
   }}
   header {{
-    background: var(--maroon);
-    color: #fff;
-    padding: 18px 22px;
+    background: var(--maroon); color: #fff; padding: 18px 22px;
   }}
-  header .brand {{
-    display: flex; align-items: center; gap: 12px;
-    font-weight: 700; letter-spacing: .3px;
-  }}
-  header .dot {{ width: 10px; height: 10px; border-radius: 50%; background: var(--orange); }}
+  header .brand {{ display:flex; align-items:center; gap:12px; font-weight:700; letter-spacing:.3px; }}
+  header .dot {{ width:10px; height:10px; border-radius:50%; background: var(--orange); }}
   main {{ padding: 28px 22px; }}
   .card {{
     max-width: 980px; margin: 0 auto; background: var(--card);
@@ -237,37 +214,31 @@ def main():
     font-size: 16px; padding: 8px 10px; border-radius: 10px;
     border: 1px solid var(--stroke); background: #fff;
   }}
-  .btns {{ display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }}
+  .btns {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }}
   a.button {{
-    display: inline-flex; align-items: center; gap: 10px;
-    padding: 10px 14px; border-radius: 12px; text-decoration: none;
-    border: 1px solid var(--stroke); background: #fff; color: var(--ink);
+    display:inline-flex; align-items:center; gap:10px;
+    padding:10px 14px; border-radius:12px; text-decoration:none;
+    border:1px solid var(--stroke); background:#fff; color:var(--ink);
     transition: transform .05s ease, box-shadow .2s ease;
   }}
   a.button:hover {{ transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,.08); }}
-  .button.google  {{ border-color: #DADCE0; }}
-  .button.apple   {{ border-color: #D1D1D1; }}
-  .button.outlook {{ border-color: #C7DCF7; }}
+  .button.google  {{ border-color:#DADCE0; }}
+  .button.apple   {{ border-color:#D1D1D1; }}
+  .button.outlook {{ border-color:#C7DCF7; }}
   small {{ color: var(--muted); }}
-  code {{
-    background: #faf7f3; padding: 4px 6px; border-radius: 8px;
-    border: 1px solid var(--stroke);
+  code {{ background:#faf7f3; padding:4px 6px; border-radius:8px; border:1px solid var(--stroke); }}
+  .grid {{ display:grid; gap:18px; grid-template-columns:1fr; }}
+  @media (min-width:820px) {{
+    .grid {{ grid-template-columns:1.2fr .8fr; }}
   }}
-  .grid {{ display: grid; gap: 18px; grid-template-columns: 1fr; }}
-  @media (min-width: 820px) {{
-    .grid {{ grid-template-columns: 1.2fr .8fr; }}
-  }}
-  .aside {{
-    border-left: 1px dashed var(--stroke); padding-left: 18px;
-  }}
-  .kicker {{ color: var(--orange); font-weight: 700; font-size: 12px; letter-spacing: .6px; }}
+  .aside {{ border-left:1px dashed var(--stroke); padding-left:18px; }}
+  .kicker {{ color:var(--orange); font-weight:700; font-size:12px; letter-spacing:.6px; }}
 </style>
 </head>
 <body>
   <header>
     <div class="brand">
-      <div class="dot"></div>
-      <div>Torrens Dynamic Calendars</div>
+      <div class="dot"></div><div>Torrens Dynamic Calendars</div>
     </div>
   </header>
   <main>
@@ -285,7 +256,6 @@ def main():
         <div class="row">
           <div class="btns">
             <a id="btn-apple" class="button apple" href="#" title="Subscribe in Apple Calendar / iOS / Outlook desktop">
-              <!-- Apple Calendar glyph -->
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <rect x="3" y="4" width="18" height="17" rx="4" ry="4" stroke="#555" fill="#fff"/>
                 <rect x="3" y="8" width="18" height="13" rx="4" ry="4" fill="#fff" stroke="#555"/>
@@ -297,7 +267,6 @@ def main():
             </a>
 
             <a id="btn-google" class="button google" href="#" target="_blank" rel="noopener" title="Add by URL in Google Calendar">
-              <!-- Google 'G' -->
               <svg width="18" height="18" viewBox="0 0 256 262" aria-hidden="true">
                 <path fill="#4285F4" d="M255.9 133.5c0-10.6-.9-18.3-2.8-26.3H130v47.7h71.9c-1.4 11.9-9 29.8-25.9 41.8l-.2 1.6 37.6 29.1 2.6.3c23.8-22 39.9-54.4 39.9-94.2"/>
                 <path fill="#34A853" d="M130 261.1c36.3 0 66.8-12 89.1-32.8l-42.4-32.8c-11.3 7.9-26.6 13.4-46.7 13.4-35.6 0-65.7-23.5-76.4-56.2l-1.6.1-41.5 32.1-.5 1.5C31.8 231.5 77.9 261.1 130 261.1"/>
@@ -308,7 +277,6 @@ def main():
             </a>
 
             <a id="btn-outlookcom" class="button outlook" href="#" target="_blank" rel="noopener" title="Subscribe in Outlook.com (personal)">
-              <!-- Outlook icon -->
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="2" y="6" width="10" height="12" fill="#0A64D8"/><rect x="10" y="6" width="12" height="12" fill="#0F7BFF" opacity=".85"/>
                 <circle cx="9" cy="12" r="3" fill="#fff"/>
@@ -324,18 +292,18 @@ def main():
               <span>Outlook 365 (work/school)</span>
             </a>
           </div>
-          <p class="lead"><small>Google adds feeds under <em>Other calendars</em>. Apple may show a trust prompt on first subscribe (normal).</small></p>
+          <p class="lead"><small>Google adds feeds under <em>Other calendars</em>. Apple may show a trust prompt the first time.</small></p>
         </div>
       </section>
 
       <aside class="aside">
         <div class="kicker">LINKS</div>
         <div class="row">
-          <p><strong>Subscribe URL (webcal):</strong> <br><code id="sub-url"></code></p>
+          <p><strong>Subscribe URL (webcal):</strong><br><code id="sub-url"></code></p>
           <p><small>Use this to subscribe in apps that accept <code>webcal://</code> (Apple, many desktop clients).</small></p>
         </div>
         <div class="row">
-          <p><strong>Download URL (https):</strong> <br><code id="dl-url"></code></p>
+          <p><strong>Download URL (https):</strong><br><code id="dl-url"></code></p>
           <p><small>One-off import (static). For live updates, prefer the buttons or the webcal URL.</small></p>
         </div>
       </aside>
@@ -343,7 +311,6 @@ def main():
   </main>
 
 <script>
-  // Feed metadata from build:
   const FEEDS = {feeds};
 
   const sel           = document.getElementById('cal');
@@ -354,7 +321,6 @@ def main():
   const subCode       = document.getElementById('sub-url');
   const dlCode        = document.getElementById('dl-url');
 
-  // Populate dropdown
   FEEDS.forEach(function(f) {{
     var opt = document.createElement('option');
     opt.value = f.file;
@@ -362,33 +328,26 @@ def main():
     sel.appendChild(opt);
   }});
 
-  // Build a canonical absolute URL to the *same directory* as this page
-  function absoluteUrlTo(file) {{
-    // Ensure we are using the page's directory (…/public/)
-    var href = window.location.href;
-    // strip query/hash
-    href = href.split('#')[0].split('?')[0];
-    // drop index.html if present
+  function canonicalBase() {{
+    let href = window.location.href.split('#')[0].split('?')[0];
     if (href.endsWith('index.html')) href = href.slice(0, -'index.html'.length);
-    // ensure single trailing slash
     if (!href.endsWith('/')) href += '/';
-    return new URL(file, href).toString();
+    return href;
   }}
 
   function updateLinks() {{
-    var file   = sel.value;                 // e.g., "calendar-student.ics"
-    var https  = absoluteUrlTo(file);       // https://…/public/calendar-student.ics
+    var file   = sel.value;                       // e.g., calendar-student.ics
+    var base   = canonicalBase();                 // …/public/
+    var https  = new URL(file, base).toString();  // absolute https to .ics
     var webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
 
-    // Google: add-by-URL
-    var google = 'https://calendar.google.com/calendar/u/0/r?cid=' + encodeURIComponent(https);
+    // Google: use /render?cid= (more tolerant)
+    var google = 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(https);
 
-    // Outlook.com personal:
     var outlookCom = 'https://outlook.live.com/calendar/0/addfromweb'
                    + '?url='  + encodeURIComponent(https)
                    + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
 
-    // Outlook 365 work/school:
     var o365 = 'https://outlook.office.com/calendar/0/addfromweb'
              + '?url='  + encodeURIComponent(https)
              + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
