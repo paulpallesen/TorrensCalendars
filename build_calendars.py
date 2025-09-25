@@ -177,7 +177,7 @@ def main():
         fh.write(ics_all)
     feeds.insert(0, {"label": "All (combined)", "file": "calendar-all.ics", "count": int(len(df))})
 
-    # UI (keeps your Apple/Google/Outlook button colors). Not a Python f-string.
+    # UI template (not a Python f-string)
     html_template = """<!doctype html>
 <html lang="en">
 <head>
@@ -187,19 +187,16 @@ def main():
 
 <style>
   :root {
-    /* Page skin (matches your screenshot) */
-    --page: #f6f3e7;     /* light background */
-    --card: #420318;     /* deep maroon card */
-    --text: #ffffff;     /* card text */
+    --page: #f6f3e7;     /* light page */
+    --card: #420318;     /* dark maroon panel */
+    --text: #ffffff;     /* text on card */
+    --border: #6e2236;
 
-    --border: #6e2236;   /* subtle border on dark card */
-
-    /* Button brand colors (unchanged per your request) */
+    /* Keep brand button colors exactly as before */
     --apple:  #979797;
     --google: #ea4236;
     --outlook:#0077da;
 
-    /* Inputs / code */
     --input-bg: #ffffff;
     --input-text: #222222;
   }
@@ -210,15 +207,14 @@ def main():
 
   .row { margin: 1.1rem 0; }
   .controls { display:flex; align-items:center; gap: .9rem; }
-  .controls label { font-weight: 700; min-width: 115px; } /* fixes the “jump” when the select opens */
+  .controls label { font-weight: 700; min-width: 115px; }
 
-  /* Select – compact, not full width */
   select {
     padding: .6rem .8rem;
     border: 1px solid rgba(255,255,255,.25);
     border-radius: 10px;
     font-size: 1rem;
-    width: 340px;              /* fixed width to avoid layout shift */
+    width: 340px;              /* fixed width to prevent layout jump */
     background: var(--input-bg);
     color: var(--input-text);
     outline: none;
@@ -230,7 +226,6 @@ def main():
   .btn-google { background: var(--google); }
   .btn-outlook{ background: var(--outlook); }
 
-  /* Make the direct URL readable on the dark card */
   code {
     display:inline-block;
     background: var(--input-bg);
@@ -270,16 +265,13 @@ def main():
   // Feeds injected from Python:
   const FEEDS = __FEEDS_JSON__;
 
-  // Robustly build the absolute URL to the /public/*.ics file
+  // Build a correct absolute URL to /public/*.ics without ever producing /public/public/
   function icsUrl(file) {
     const origin = window.location.origin;
     let path = window.location.pathname;
-    // Ensure we end with a slash (directory)
     if (!path.endsWith('/')) path = path.slice(0, path.lastIndexOf('/') + 1);
-    // If we're already inside /public/, don't add it again
-    if (path.endsWith('/public/')) {
-      return origin + path + file;
-    }
+    // If current page is already served from /public/, don't add it again
+    if (path.endsWith('/public/')) return origin + path + file;
     return origin + path + 'public/' + file;
   }
 
@@ -302,20 +294,19 @@ def main():
     const label = sel.options[sel.selectedIndex].text;
     const https = icsUrl(file);
 
-    // Apple/macOS/iOS & Outlook desktop via webcal://
-    const webcal  = 'webcal://' + https.replace(/^https?:\/\//, '');
+    // Apple/macOS/iOS & Outlook desktop use webcal://
+    const webcal = 'webcal://' + https.replace(/^https?:\/\//, '');
 
-    // Google “Add by URL” prefill (kept exactly as when it worked)
-    const google  = 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(https);
+    // ✅ Google: open "Add by URL" screen with field pre-filled (reliable flow)
+    const google = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl?url=' + encodeURIComponent(https);
 
-    // Outlook Work/Study (Office 365) Add by URL (kept as when it worked)
+    // ✅ Outlook Work/Study (Office 365) "Add by URL"
     const outlook = 'https://outlook.office.com/calendar/0/add?url=' + encodeURIComponent(https) +
                     '&name=' + encodeURIComponent(label);
 
     btnApple.href   = webcal;
     btnGoogle.href  = google;
     btnOutlook.href = outlook;
-
     directCode.textContent = https;
   }
 
