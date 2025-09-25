@@ -1,1 +1,78 @@
+name: Build & Publish Dynamic Calendars
 
+on:
+  # 1) Scheduled builds (pick your cadence)
+  schedule:
+    - cron: "0 14 * * 1"     # Weekly: Mon 00:00 Sydney (~14:00 UTC day before)
+    - cron: "0 14 1 * *"     # Monthly: 1st of month, 00:00 Sydney
+  # 2) Manual run from the Actions tab
+  workflow_dispatch: {}
+  # 3) Push to repo (any change)
+  push:
+    branches: [ main ]
+    paths:
+      - "build_calendars.py"
+      - "requirements.txt"
+      - ".github/workflows/build-calendars.yml"
+      - ".nojekyll"
+      - "README.md"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CSV_URL: ${{ secrets.CSV_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate CSV_URL
+        run: |
+          if [ -z "${{ env.CSV_URL }}" ]; then
+            echo "CSV_URL not set. Go to Repo Settings → Secrets and variables → Actions → New repository secret 'CSV_URL'."
+            exit 1
+          fi
+
+      # 👀 Peek at your published CSV for debugging
+      - name: Peek at published CSV (first 20 lines)
+        run: |
+          echo "Fetching: $CSV_URL"
+          curl -sSL "$CSV_URL" | head -n 20
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build calendars
+        run: |
+          mkdir -p public
+          python build_calendars.py
+          # Redirect root to the dropdown page
+          echo "<meta http-equiv='refresh' content='0; url=public/index.html'>" > index.html
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
