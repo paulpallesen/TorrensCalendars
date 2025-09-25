@@ -185,12 +185,12 @@ def main():
             outf.write(ics)
         built.append((cat, fname, len(sub)))
 
-    # Build combined
+    # Combined feed
     ics_all = build_ics_for_group(df, DEFAULT_TZ, "All")
     with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8", newline="") as outf:
         outf.write(ics_all)
 
-    # Build data for the page (All + each category)
+    # Build landing page (dropdown + buttons)
     feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}]
     feeds += [{"label": cat, "file": fn, "count": count} for (cat, fn, count) in built]
 
@@ -202,10 +202,10 @@ def main():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }}
-  .card {{ max-width: 840px; padding: 1.25rem; border: 1px solid #ddd; border-radius: 12px; }}
+  .card {{ max-width: 860px; padding: 1.25rem; border: 1px solid #ddd; border-radius: 12px; }}
   .row {{ margin: .75rem 0; }}
   select, a.button {{ font-size: 1rem; }}
-  a.button {{ display:inline-block; padding:.6rem .9rem; margin-right:.5rem; text-decoration:none; border:1px solid #ccc; border-radius:8px; }}
+  a.button {{ display:inline-block; padding:.6rem .9rem; margin:.25rem .5rem .25rem 0; text-decoration:none; border:1px solid #ccc; border-radius:8px; }}
   small {{ color:#666; }}
   code {{ background:#f6f6f6; padding:.15rem .3rem; border-radius:6px; }}
 </style>
@@ -221,11 +221,12 @@ def main():
     <div class="row">
       <p><strong>Subscribe with:</strong></p>
       <p>
-        <a id="btn-apple"   class="button" href="#">Apple / iOS / Outlook (desktop)</a>
-        <a id="btn-google"  class="button" href="#" target="_blank">Google Calendar (web)</a>
-        <a id="btn-outlook" class="button" href="#" target="_blank">Outlook.com (web)</a>
+        <a id="btn-apple"      class="button" href="#">Apple / iOS / Outlook (desktop)</a>
+        <a id="btn-google"     class="button" href="#" target="_blank">Google Calendar (web)</a>
+        <a id="btn-outlookcom" class="button" href="#" target="_blank">Outlook.com (personal)</a>
+        <a id="btn-o365"       class="button" href="#" target="_blank">Outlook 365 (work/school)</a>
       </p>
-      <p><small>These are live subscriptions (not downloads). Apps refresh on their own schedule.</small></p>
+      <p><small>These are live subscriptions (not downloads). In Google Calendar the feed appears under <em>Other calendars</em>.</small></p>
     </div>
 
     <div class="row">
@@ -238,7 +239,7 @@ def main():
   // Feeds provided by the build script:
   const FEEDS = {feeds};
 
-  // Compute base URL for this page (works whether hosted at / or /<repo>/)
+  // Compute base URL for this page (works at repo subpaths)
   function baseUrl() {{
     const u = new URL(window.location.href);
     if (!u.pathname.endsWith('/')) {{
@@ -247,11 +248,12 @@ def main():
     return u;
   }}
 
-  const sel = document.getElementById('cal');
-  const btnApple   = document.getElementById('btn-apple');
-  const btnGoogle  = document.getElementById('btn-google');
-  const btnOutlook = document.getElementById('btn-outlook');
-  const directCode = document.getElementById('direct-url');
+  const sel           = document.getElementById('cal');
+  const btnApple      = document.getElementById('btn-apple');
+  const btnGoogle     = document.getElementById('btn-google');
+  const btnOutlookCom = document.getElementById('btn-outlookcom');
+  const btnO365       = document.getElementById('btn-o365');
+  const directCode    = document.getElementById('direct-url');
 
   // Populate dropdown
   FEEDS.forEach(function(f) {{
@@ -262,25 +264,31 @@ def main():
   }});
 
   function updateLinks() {{
-    var file = sel.value;
-    // Our ICS files live under /public/
-    var base = baseUrl();
+    var file  = sel.value;
+    var base  = baseUrl();
     var https = new URL('public/' + file, base).toString();
 
-    // Apple/iOS/Outlook desktop use webcal://
-    var webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
+    // SECURE webcal to avoid macOS "insecure connection"
+    var hostOnly = https.replace(/^https?:\\/\\//, '');
+    var webcals  = 'webcals://' + hostOnly;
 
-    // Google Calendar expects ?cid=<https url>
-    var google = 'https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(https);
+    // Google Calendar (adds by URL under "Other calendars")
+    var google = 'https://calendar.google.com/calendar/u/0/r?cid=' + encodeURIComponent(https);
 
-    // Outlook.com subscription composer
-    var outlook = 'https://outlook.live.com/owa?path=/calendar/action/compose&rru=addsubscription'
-                + '&url=' + encodeURIComponent(https)
-                + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+    // Outlook.com (personal)
+    var outlookCom = 'https://outlook.live.com/calendar/0/addfromweb'
+                   + '?url='  + encodeURIComponent(https)
+                   + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
 
-    btnApple.href   = webcal;
-    btnGoogle.href  = google;
-    btnOutlook.href = outlook;
+    // Outlook 365 (work/school)
+    var o365 = 'https://outlook.office.com/calendar/0/addfromweb'
+             + '?url='  + encodeURIComponent(https)
+             + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+
+    btnApple.href      = webcals;
+    btnGoogle.href     = google;
+    btnOutlookCom.href = outlookCom;
+    btnO365.href       = o365;
 
     directCode.textContent = https;
   }}
