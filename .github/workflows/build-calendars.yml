@@ -31,6 +31,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+        - name: Verify repo files
+  run: |
+    echo "Branch: $GITHUB_REF"
+    ls -la
+    test -f build_calendars.py || (echo "ERROR: build_calendars.py missing" && exit 1)
+    test -f requirements.txt   || (echo "ERROR: requirements.txt missing" && exit 1)
+    test -f .nojekyll          || (echo "ERROR: .nojekyll missing" && exit 1)
+
+- name: Peek at published CSV (first 20 lines)
+  run: |
+    echo "Fetching: $CSV_URL"
+    curl -sSL "$CSV_URL" | head -n 20
+
+
       - name: Validate CSV_URL
         run: |
           if [ -z "${{ env.CSV_URL }}" ]; then
