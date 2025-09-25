@@ -25,6 +25,10 @@ END:VTIMEZONE
 """
 
 CAL_REQUIRED = ["Title", "Start Date"]
+CAL_OPTIONAL = [
+    "Calendar", "Start Time", "End Date", "End Time", "Location",
+    "Description", "URL", "Transparent", "UID"
+]
 
 def slugify(s: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "-" for ch in str(s)).strip("-") or "general"
@@ -76,13 +80,14 @@ def truthy(val) -> bool:
 
 def make_uid(fields):
     h = hashlib.sha1("|".join(str(x) for x in fields).encode("utf-8")).hexdigest()[:16]
-    return f"{h}@github-pages"
+    return f"{h}@netlify-calendars"
 
 def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
     now_utc = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    
     lines = [
         "BEGIN:VCALENDAR",
-        "PRODID:-//Dynamic Calendars//GitHub Pages//EN",
+        "PRODID:-//Dynamic Calendars//Netlify//EN",
         "VERSION:2.0",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
@@ -120,7 +125,6 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
         if location: lines.append(f"LOCATION:{ical_escape(location)}")
         if desc:     lines.append(f"DESCRIPTION:{ical_escape(desc)}")
         if url:      lines.append(f"URL:{ical_escape(url)}")
-        if cat:      lines.append(f"CATEGORIES:{ical_escape(cat)}")
 
         if is_all_day:
             start_d = _to_date(sdate)
@@ -131,9 +135,12 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
         else:
             dt_start = parse_datetime(sdate, stime)
             dt_end   = parse_datetime(edate or sdate, etime or stime or "00:00")
-            if dt_start and dt_end:
-                lines.append(f"DTSTART;TZID={tzid}:{fmt_local(dt_start)}")
-                lines.append(f"DTEND;TZID={tzid}:{fmt_local(dt_end)}")
+            if not dt_start or not dt_end:
+                lines.append("END:VEVENT")
+                continue
+            lines.append(f"DTSTART;TZID={tzid}:{fmt_local(dt_start)}")
+            lines.append(f"DTEND;TZID={tzid}:{fmt_local(dt_end)}")
+
         lines.append("END:VEVENT")
 
     lines.append("END:VCALENDAR")
@@ -142,13 +149,15 @@ def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
 def main():
     csv_url = os.environ.get("CSV_URL", "").strip()
     if not csv_url:
-        print("ERROR: CSV_URL not set", file=sys.stderr)
+        print("ERROR: CSV_URL env var is not set. Set it to your published Google Sheet CSV link.", file=sys.stderr)
         sys.exit(1)
 
     df = pd.read_csv(csv_url)
+
     for c in CAL_REQUIRED:
         if c not in df.columns:
             raise SystemExit(f"Missing required column: {c}")
+
     if "Calendar" not in df.columns:
         df["Calendar"] = "General"
     df["Calendar"] = df["Calendar"].fillna("General").apply(lambda x: x if str(x).strip() else "General")
@@ -158,18 +167,19 @@ def main():
 
     categories = sorted(df["Calendar"].dropna().unique().tolist())
     built = []
+
     for cat in categories:
         sub = df[df["Calendar"] == cat].copy()
         ics = build_ics_for_group(sub, DEFAULT_TZ, cat)
         slug = slugify(cat)
         fname = f"calendar-{slug}.ics"
-        with open(os.path.join(outdir, fname), "w", encoding="utf-8") as f_out:
-            f_out.write(ics)
+        with open(os.path.join(outdir, fname), "w", encoding="utf-8", newline="") as f:
+            f.write(ics)
         built.append((cat, fname, len(sub)))
 
     ics_all = build_ics_for_group(df, DEFAULT_TZ, "All")
-    with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8") as f_all:
-        f_all.write(ics_all)
+    with open(os.path.join(outdir, "calendar-all.ics"), "w", encoding="utf-8", newline="") as f:
+        f.write(ics_all)
 
     feeds = [{"label": "All (combined)", "file": "calendar-all.ics", "count": len(df)}]
     feeds += [{"label": cat, "file": fn, "count": count} for (cat, fn, count) in built]
@@ -180,120 +190,92 @@ def main():
 <meta charset="utf-8">
 <title>Subscribe to Calendars</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+
 <style>
   :root {{
-    --brand-maroon: #4B0D1F;
-    --brand-beige:  #F3EFE6;
-    --brand-orange: #FF6A00;
-    --text:         #1d1d1d;
-    --muted:        #6b6b6b;
-    --border:       #e4dfd6;
-    --btn-apple:    #555555;
-    --btn-google:   #EA4335;
-    --btn-outlook:  #0F6CBD;
+    --brand-maroon: #5c1130;
+    --brand-beige: #f8f5f2;
+    --text: #222;
+    --border: #ccc;
   }}
 
   body {{
-    font-family: 'Segoe UI', Roboto, Arial, sans-serif;
-    margin: 0;
-    padding: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    margin: 2rem;
     background: var(--brand-beige);
-    color: var(--text);
   }}
-
-  header {{
-    background: var(--brand-maroon);
-    color: #fff;
-    padding: 1rem 2rem;
-    border-bottom: 4px solid var(--brand-orange);
-  }}
-  header h1 {{ margin: 0; font-size: 1.75rem; }}
-
-  .container {{
-    max-width: 900px;
-    margin: 2rem auto;
-    padding: 2rem;
-    background: #fff;
+  .card {{
+    max-width: 800px;
+    padding: 1.5rem;
     border: 1px solid var(--border);
-    border-radius: 14px;
-    box-shadow: 0 6px 18px rgba(0,0,0,.06);
+    border-radius: 12px;
+    background: #fff;
   }}
-
-  .row {{ margin: 1.2rem 0; }}
-
-  /* Highlighted banner row for the dropdown */
-.row.dropdown {
-  background: var(--brand-maroon);
-  padding: 1rem;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 1rem;
-}
-.row.dropdown label {
-  color: #fff;
-  font-weight: 700;
-  margin: 0;
-  white-space: nowrap;
-}
-.row.dropdown select {
-  background: var(--brand-beige);
-  color: var(--text);
-  padding: .6rem .8rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 1rem;
-  width: 33%; /* Now only takes 1/3 of the row */
-  min-width: 220px; /* fallback so it’s not too tiny on narrow screens */
-}
-
-
-  .buttons a {{
-    display: inline-block;
-    padding: .8rem 1.05rem;
-    margin: .25rem .25rem .25rem 0;
-    border-radius: 10px;
-    text-decoration: none;
-    font-weight: 600;
-    border: 2px solid transparent;
+  .row {{ margin: 1rem 0; }}
+  a.button {{
+    display:inline-block;
+    padding:.6rem .9rem;
+    margin-right:.5rem;
+    text-decoration:none;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background: var(--brand-maroon);
     color:#fff;
   }}
-  .apple   {{ background: var(--btn-apple); }}
-  .google  {{ background: var(--btn-google); }}
-  .outlook {{ background: var(--btn-outlook); }}
-  .buttons a:hover {{ filter: brightness(0.95); }}
-
+  a.button:hover {{ opacity:0.9; }}
   code {{
-    background: #faf8f5;
-    padding: .35rem .5rem;
-    border-radius: 8px;
-    border: 1px solid var(--border);
+    background:#f6f6f6;
+    padding:.2rem .4rem;
+    border-radius:6px;
   }}
-  small {{ color: var(--muted); display:block; margin-top:.55rem; }}
+  .row.dropdown {{
+    background: var(--brand-maroon);
+    padding: 1rem;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }}
+  .row.dropdown label {{
+    color: #fff;
+    font-weight: 700;
+    margin: 0;
+    white-space: nowrap;
+  }}
+  .row.dropdown select {{
+    background: var(--brand-beige);
+    color: var(--text);
+    padding: .6rem .8rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 1rem;
+    width: 33%;
+    min-width: 220px;
+  }}
 </style>
 </head>
 <body>
-  <header>
-    <h1>Dynamic Calendars</h1>
-  </header>
+  <div class="card">
+    <h1>Subscribe to a Calendar</h1>
 
-  <div class="container">
     <div class="row dropdown">
-      <label for="cal">Select a Calendar</label>
+      <label for="cal">Select a calendar:</label>
       <select id="cal"></select>
     </div>
 
-    <div class="row buttons">
-      <a id="btn-apple"   class="apple"   href="#"> Apple / iOS / Outlook (desktop)</a>
-      <a id="btn-google"  class="google"  href="#">Google Calendar (web)</a>
-      <a id="btn-outlook" class="outlook" href="#">Outlook (Work/School)</a>
-      <small>Google uses “Add by URL”. We’ll copy the link and open the correct page.</small>
+    <div class="row">
+      <p><strong>Subscribe with:</strong></p>
+      <p>
+        <a id="btn-apple"   class="button" href="#">Apple Calendar (macOS / iOS)</a>
+        <a id="btn-google"  class="button" href="#" target="_blank">Google Calendar</a>
+        <a id="btn-outlook" class="button" href="#" target="_blank">Outlook Work/Study</a>
+      </p>
+      <p><small>These are live subscriptions. Apps refresh on their own schedule.</small></p>
     </div>
 
     <div class="row">
-      <label>Direct feed URL:</label>
-      <code id="direct-url"></code>
+      <p><strong>Direct feed URL:</strong> <code id="direct-url"></code></p>
+      <p><small>Share this HTTPS link with anyone who needs read-only access.</small></p>
     </div>
   </div>
 
@@ -308,44 +290,33 @@ def main():
     return u;
   }}
 
-  const sel        = document.getElementById('cal');
+  const sel = document.getElementById('cal');
   const btnApple   = document.getElementById('btn-apple');
   const btnGoogle  = document.getElementById('btn-google');
   const btnOutlook = document.getElementById('btn-outlook');
   const directCode = document.getElementById('direct-url');
 
-  FEEDS.forEach(function(f) {{
+  FEEDS.forEach(f => {{
     const opt = document.createElement('option');
     opt.value = f.file;
-    opt.textContent = f.label + (typeof f.count === 'number' ? ' (' + String(f.count) + ')' : '');
+    opt.textContent = f.label + (typeof f.count === 'number' ? ` (${f.count})` : '');
     sel.appendChild(opt);
   }});
 
   function updateLinks() {{
     const file = sel.value;
     const base = baseUrl();
-    const https = new URL(file, base).toString();
+    const https = new URL('public/' + file, base).toString();
 
     const webcal = 'webcal://' + https.replace(/^https?:\\/\\//, '');
-    const o365 = 'https://outlook.office.com/calendar/0/addfromweb'
-               + '?url=' + encodeURIComponent(https)
-               + '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
+    const google = 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(https);
+    const outlook = 'https://outlook.office.com/calendar/0/add?url=' + encodeURIComponent(https) +
+                    '&name=' + encodeURIComponent(sel.options[sel.selectedIndex].text);
 
     btnApple.href   = webcal;
-    btnOutlook.href = o365;
+    btnGoogle.href  = google;
+    btnOutlook.href = outlook;
     directCode.textContent = https;
-
-    btnGoogle.onclick = async function(e) {{
-      e.preventDefault();
-      try {{
-        await navigator.clipboard.writeText(https);
-        alert('Calendar URL copied! In Google Calendar → Other calendars → From URL → Paste → Add.');
-      }} catch (err) {{
-        prompt('Copy this calendar URL:', https);
-      }}
-      const settingsUrl = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl?cid=' + encodeURIComponent(https);
-      window.open(settingsUrl, '_blank', 'noopener');
-    }};
   }}
 
   sel.addEventListener('change', updateLinks);
@@ -354,8 +325,8 @@ def main():
 </body>
 </html>
 """
-    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f_index:
-        f_index.write(index_html)
+    with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f:
+        f.write(index_html)
 
 if __name__ == "__main__":
     main()
