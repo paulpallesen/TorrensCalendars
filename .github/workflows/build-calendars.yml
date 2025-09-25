@@ -1,13 +1,13 @@
 name: Build & Publish Dynamic Calendars
 
 on:
-  # 1) Scheduled builds (pick your cadence)
+  # 1) Scheduled builds (adjust as you like)
   schedule:
-    - cron: "0 14 * * 1"     # Weekly: Mon 00:00 Sydney (~14:00 UTC day before)
+    - cron: "0 14 * * 1"     # Weekly: Mon 00:00 Sydney (~14:00 UTC previous day)
     - cron: "0 14 1 * *"     # Monthly: 1st of month, 00:00 Sydney
   # 2) Manual run from the Actions tab
   workflow_dispatch: {}
-  # 3) Push to repo (any change)
+  # 3) Push to repo (any change to these files)
   push:
     branches: [ main ]
     paths:
@@ -31,28 +31,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-        - name: Verify repo files
-  run: |
-    echo "Branch: $GITHUB_REF"
-    ls -la
-    test -f build_calendars.py || (echo "ERROR: build_calendars.py missing" && exit 1)
-    test -f requirements.txt   || (echo "ERROR: requirements.txt missing" && exit 1)
-    test -f .nojekyll          || (echo "ERROR: .nojekyll missing" && exit 1)
+      - name: Verify repo files
+        run: |
+          echo "Branch: $GITHUB_REF"
+          pwd
+          ls -la
+          test -f build_calendars.py || (echo "ERROR: build_calendars.py missing" && exit 1)
+          test -f requirements.txt   || (echo "ERROR: requirements.txt missing" && exit 1)
+          test -f .nojekyll          || (echo "ERROR: .nojekyll missing" && exit 1)
 
-- name: Peek at published CSV (first 20 lines)
-  run: |
-    echo "Fetching: $CSV_URL"
-    curl -sSL "$CSV_URL" | head -n 20
-
-
-      - name: Validate CSV_URL
+      - name: Validate CSV_URL secret
         run: |
           if [ -z "${{ env.CSV_URL }}" ]; then
-            echo "CSV_URL not set. Go to Repo Settings → Secrets and variables → Actions → New repository secret 'CSV_URL'."
+            echo "CSV_URL not set. Go to Settings → Secrets and variables → Actions → New repository secret 'CSV_URL'."
             exit 1
           fi
 
-      # 👀 Peek at your published CSV for debugging
       - name: Peek at published CSV (first 20 lines)
         run: |
           echo "Fetching: $CSV_URL"
