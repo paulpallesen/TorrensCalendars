@@ -85,15 +85,19 @@ def make_uid(fields):
 
 def build_ics_for_group(df: pd.DataFrame, tzid: str, cal_name: str) -> str:
     now_utc = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+   
     lines = [
-        "BEGIN:VCALENDAR",
-        "PRODID:-//Dynamic Calendars//GitHub Pages//EN",
-        "VERSION:2.0",
-        "CALSCALE:GREGORIAN",
-        "METHOD:PUBLISH",
-        AUS_TZ_VTIMEZONE.strip()
-    ]
-
+    "BEGIN:VCALENDAR",
+    "PRODID:-//Dynamic Calendars//GitHub Pages//EN",
+    "VERSION:2.0",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    f"X-WR-CALNAME:{ical_escape(cal_name)}",
+    f"X-WR-TIMEZONE:{tzid}",
+    "X-PUBLISHED-TTL:PT12H",  # hint: clients may refresh ~12h; they can ignore it
+    AUS_TZ_VTIMEZONE.strip()
+]
+    
     event_count = 0
     for _, r in df.iterrows():
         title = str(r.get("Title", "") or "").strip()
