@@ -192,7 +192,7 @@ def main():
     --text: #ffffff;     /* text on card */
     --border: #6e2236;
 
-    /* Keep brand button colors exactly as before */
+    /* Brand button colors (do not change per user request) */
     --apple:  #979797;
     --google: #ea4236;
     --outlook:#0077da;
@@ -214,7 +214,7 @@ def main():
     border: 1px solid rgba(255,255,255,.25);
     border-radius: 10px;
     font-size: 1rem;
-    width: 340px;              /* fixed width to prevent layout jump */
+    width: 340px;              /* fixed width to avoid layout jump */
     background: var(--input-bg);
     color: var(--input-text);
     outline: none;
@@ -236,7 +236,25 @@ def main():
     max-width: 100%;
     overflow-x: auto;
     white-space: nowrap;
+    cursor: pointer; /* click to copy */
   }
+
+  /* Tiny toast for “copied” feedback */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,.8);
+    color: #fff;
+    padding: .55rem .8rem;
+    border-radius: 8px;
+    font-size: .9rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+  #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -251,15 +269,17 @@ def main():
     <div class="row">
       <strong>Subscribe with:</strong><br>
       <a id="btn-apple"   class="btn btn-apple"   href="#">Apple Calendar</a>
-      <a id="btn-google"  class="btn btn-google"  href="#" target="_blank">Google Calendar</a>
-      <a id="btn-outlook" class="btn btn-outlook" href="#" target="_blank">Outlook (Work/Study)</a>
+      <a id="btn-google"  class="btn btn-google"  href="#">Google Calendar</a>
+      <a id="btn-outlook" class="btn btn-outlook" href="#" target="_blank" rel="noopener">Outlook (Work/Study)</a>
     </div>
 
     <div class="row">
       <strong>Direct feed URL:</strong>
-      <code id="direct-url"></code>
+      <code id="direct-url" title="Click to copy"></code>
     </div>
   </div>
+
+  <div id="toast">Copied to clipboard</div>
 
 <script>
   // Feeds injected from Python:
@@ -270,16 +290,22 @@ def main():
     const origin = window.location.origin;
     let path = window.location.pathname;
     if (!path.endsWith('/')) path = path.slice(0, path.lastIndexOf('/') + 1);
-    // If current page is already served from /public/, don't add it again
     if (path.endsWith('/public/')) return origin + path + file;
     return origin + path + 'public/' + file;
   }
 
-  const sel = document.getElementById('cal');
+  const sel        = document.getElementById('cal');
   const btnApple   = document.getElementById('btn-apple');
   const btnGoogle  = document.getElementById('btn-google');
   const btnOutlook = document.getElementById('btn-outlook');
   const directCode = document.getElementById('direct-url');
+  const toast      = document.getElementById('toast');
+
+  function showToast(msg='Copied to clipboard') {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1400);
+  }
 
   // Populate dropdown
   FEEDS.forEach(f => {
@@ -289,26 +315,44 @@ def main():
     sel.appendChild(opt);
   });
 
+  // Store latest URLs for click handlers
+  let CURRENT = { https:'', label:'' };
+
   function updateLinks() {
     const file  = sel.value;
     const label = sel.options[sel.selectedIndex].text;
     const https = icsUrl(file);
 
-    // Apple/macOS/iOS & Outlook desktop use webcal://
-    const webcal = 'webcal://' + https.replace(/^https?:\/\//, '');
+    // Save for click handlers
+    CURRENT.https = https;
+    CURRENT.label = label;
 
-    // ✅ Google: open "Add by URL" screen with field pre-filled (reliable flow)
-    const google = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl?url=' + encodeURIComponent(https);
+    // Apple/macOS/iOS & Outlook desktop via webcal
+    btnApple.href   = 'webcal://' + https.replace(/^https?:\/\//, '');
 
-    // ✅ Outlook Work/Study (Office 365) "Add by URL"
-    const outlook = 'https://outlook.office.com/calendar/0/add?url=' + encodeURIComponent(https) +
-                    '&name=' + encodeURIComponent(label);
-
-    btnApple.href   = webcal;
-    btnGoogle.href  = google;
-    btnOutlook.href = outlook;
+    // Set the direct feed text
     directCode.textContent = https;
+
+    // Outlook (Work/Study) – subscription composer (this was the one that worked for you)
+    btnOutlook.href = 'https://outlook.office.com/owa/?path=/calendar/action/compose&rru=addsubscription'
+                    + '&url='  + encodeURIComponent(https)
+                    + '&name=' + encodeURIComponent(label);
   }
+
+  // Google: copy URL then open “Add by URL” page
+  btnGoogle.addEventListener('click', async (e) => {
+    e.preventDefault();
+    try { await navigator.clipboard.writeText(CURRENT.https); } catch(_) {}
+    showToast('Feed URL copied. Paste it in Google → Add by URL.');
+    const g = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl';
+    window.open(g, '_blank', 'noopener');
+  });
+
+  // Direct feed code: click to copy
+  directCode.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(CURRENT.https); } catch(_) {}
+    showToast('Feed URL copied');
+  });
 
   sel.addEventListener('change', updateLinks);
   updateLinks();
@@ -319,6 +363,8 @@ def main():
 
     html_out = html_template.replace("__FEEDS_JSON__", json.dumps(feeds, ensure_ascii=False))
 
+    outdir = "public"
+    os.makedirs(outdir, exist_ok=True)
     with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html_out)
 
