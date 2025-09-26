@@ -1,91 +1,52 @@
-name: Build & Publish Dynamic Calendars
+name: Build and Publish Calendar
 
 on:
-  # 1) Scheduled builds (Sydney time equivalents noted)
-  schedule:
-    - cron: "0 14 * * 1"   # Weekly: Mon 00:00 Australia/Sydney (~14:00 UTC previous day)
-    - cron: "0 14 1 * *"   # Monthly: 1st of month, 00:00 Australia/Sydney
-  # 2) Manual run from the Actions tab
-  workflow_dispatch: {}
-  # 3) Push to main (any change to these files)
   push:
     branches: [ main ]
     paths:
-      - "build_calendars.py"
+      - "calendar.xlsx"
+      - "build_calendar.py"
       - "requirements.txt"
-      - ".github/workflows/build-calendars.yml"
-      - ".nojekyll"
-      - "README.md"
+      - ".github/workflows/build-calendar.yml"
+  # Optional schedule you may already have; kept as-is if present previously.
+  # schedule:
+  #   - cron: "0 14 * * *"  # 14:00 UTC ~ midnight Sydney depending on DST
+  workflow_dispatch: {}
 
 permissions:
-  # Must be write so we can push the gh-pages branch for Google raw URLs
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      CSV_URL: ${{ secrets.CSV_URL }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Verify repo files
-        run: |
-          echo "Branch: $GITHUB_REF"
-          ls -la
-          test -f build_calendars.py || (echo "ERROR: build_calendars.py missing" && exit 1)
-          test -f requirements.txt   || (echo "ERROR: requirements.txt missing" && exit 1)
-          test -f .nojekyll          || (echo "ERROR: .nojekyll missing" && exit 1)
-
-      - name: Validate CSV_URL secret
-        run: |
-          if [ -z "${{ env.CSV_URL }}" ]; then
-            echo "CSV_URL not set. Go to Settings → Secrets and variables → Actions → New repository secret 'CSV_URL'."
-            exit 1
-          fi
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build calendars (generate /public/*.ics and landing page)
+      - name: Build calendar
         run: |
+          python build_calendar.py
           mkdir -p public
-          python build_calendars.py
-          # Root redirect to the landing page in /public/
-          echo "<meta http-equiv='refresh' content='0; url=public/index.html'>" > index.html
+          cp calendar.ics public/
+          # Optional landing page; unchanged behavior
+          echo "<h1>Calendar Feed</h1><p><a href='calendar.ics'>calendar.ics</a></p>" > public/index.html
 
-      # --- NEW: also publish the raw files to a real gh-pages branch for Google Calendar ---
-      - name: Publish raw files to gh-pages (for Google "Add by URL")
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Publish the whole workspace so /public/*.ics exists at gh-pages/public/*.ics
-          publish_dir: .
-          publish_branch: gh-pages
-          keep_files: false
-          force_orphan: true
-
-      # Artifact for GitHub Pages deployment (serves the nice website)
-      - name: Upload artifact (for GitHub Pages)
+      - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: public
 
   deploy:
     needs: build
