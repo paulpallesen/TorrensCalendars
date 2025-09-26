@@ -34,6 +34,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          python - <<'PY'
+import sys
+print("Python:", sys.version)
+import ics, pandas, openpyxl
+print("✅ Installed OK -> ics:", ics.__version__, "pandas:", pandas.__version__, "openpyxl:", openpyxl.__version__)
+PY
 
       - name: Build calendar
         run: |
