@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Subscribe to Calendars</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --page: #f6f3e7;   /* light background */
+    --card: #420318;  /* maroon card */
+    --text: #ffffff;
+    --apple:  #979797;
+    --google: #ea4236;
+    --outlook:#0077da;
+  }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; background: var(--page); color: var(--text); }
+  .card { max-width: 900px; padding: 1.5rem; border-radius: 14px; background: var(--card); }
+  h1 { margin: 0 0 1rem 0; font-size: 2rem; }
+  .row { margin: 1rem 0; }
+  .controls { display:flex; align-items:center; gap: .75rem; }
+  .controls label { font-weight: 700; min-width: 110px; }
+  select {
+    padding: .55rem .7rem; border-radius: 10px; font-size: 1rem;
+    width: 320px; background: #fff; color: #222; border: 1px solid rgba(255,255,255,.25);
+  }
+  .btn { display:inline-block; padding:.6rem .95rem; margin-right:.5rem; text-decoration:none; color:#fff; border-radius:10px; font-weight:600; }
+  .btn-apple  { background: var(--apple); }
+  .btn-google { background: var(--google); }
+  .btn-outlook{ background: var(--outlook); }
+  code { display:inline-block; background:#fff; color:#222; padding:.3rem .45rem; border-radius:8px; border:1px solid rgba(0,0,0,.1); cursor:pointer; white-space:nowrap; }
+  #toast { position: fixed; left:50%; bottom:24px; transform:translateX(-50%); background: rgba(0,0,0,.85); color:#fff; padding:.5rem .75rem; border-radius:8px; font-size:.9rem; opacity:0; transition:opacity .2s ease; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Subscribe to a Calendar</h1>
+    <div class="row controls">
+      <label for="cal">Calendar:</label>
+      <select id="cal"></select>
+    </div>
+    <div class="row">
+      <strong>Subscribe with:</strong><br>
+      <a id="btn-apple"   class="btn btn-apple"   href="#">Apple Calendar</a>
+      <a id="btn-google"  class="btn btn-google"  href="#">Google Calendar</a>
+      <a id="btn-outlook" class="btn btn-outlook" href="#">Outlook (Work/Study)</a>
+    </div>
+    <div class="row">
+      <strong>Direct feed URL:</strong> <code id="direct-url" title="Click to copy"></code>
+    </div>
+  </div>
+  <div id="toast">Copied</div>
+
+<script>
+  const FEEDS = [{"label": "All (combined)", "file": "calendar-all.ics", "count": 136}, {"label": "Academic Calendar - Staff", "file": "calendar-academic-calendar---staff.ics", "count": 135}, {"label": "General", "file": "calendar-general.ics", "count": 1}];
+
+  const sel = document.getElementById('cal');
+  const btnApple   = document.getElementById('btn-apple');
+  const btnGoogle  = document.getElementById('btn-google');
+  const btnOutlook = document.getElementById('btn-outlook');
+  const directCode = document.getElementById('direct-url');
+  const toast      = document.getElementById('toast');
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1500);
+  }
+
+  // Since index.html and .ics live in the same folder (/public/), just resolve the filename against this page:
+  function icsUrl(file) {
+    const base = new URL(window.location.href);
+    if (base.pathname.endsWith('/index.html')) {
+      base.pathname = base.pathname.slice(0, -'index.html'.length);
+    }
+    return new URL(file, base).toString();
+  }
+
+  FEEDS.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f.file;
+    opt.textContent = f.label + (typeof f.count === 'number' ? ` (${f.count})` : '');
+    sel.appendChild(opt);
+  });
+
+  let CURRENT = { https:'', label:'' };
+
+  function updateLinks() {
+    const file  = sel.value;
+    const label = sel.options[sel.selectedIndex].text;
+    const https = icsUrl(file);
+
+    CURRENT = { https, label };
+    // Apple/macOS/iOS & Outlook desktop (webcal)
+    btnApple.href = 'webcal://' + https.replace(/^https?:\/\//,'');
+    btnApple.target = '_self'; btnApple.rel = '';
+
+    // Outlook (Work/Study) composer (pre-fills)
+    btnOutlook.href =
+      'https://outlook.office.com/owa/?path=/calendar/action/compose&rru=addsubscription'
+      + '&url='  + encodeURIComponent(https)
+      + '&name=' + encodeURIComponent(label);
+    btnOutlook.target = '_blank';
+    btnOutlook.rel = 'noopener';
+
+    // Direct URL visible & copyable
+    directCode.textContent = https;
+  }
+
+  // Google: copy to clipboard + open "Add by URL" page
+  btnGoogle.addEventListener('click', async (e) => {
+    e.preventDefault();
+    try { await navigator.clipboard.writeText(CURRENT.https); } catch (_) {}
+    showToast('Feed URL copied. Paste it in Google → Add by URL.');
+    window.open('https://calendar.google.com/calendar/u/0/r/settings/addbyurl', '_blank', 'noopener');
+  });
+
+  directCode.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(CURRENT.https); } catch (_) {}
+    showToast('Feed URL copied');
+  });
+
+  sel.addEventListener('change', updateLinks);
+  updateLinks();
+</script>
+</body>
+</html>
