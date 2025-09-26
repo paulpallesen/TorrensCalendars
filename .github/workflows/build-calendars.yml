@@ -5,7 +5,7 @@ on:
     branches: [ main ]
     paths:
       - "calendar.xlsx"
-      - "build_calendar.py"
+      - "build_calendars.py"
       - "requirements.txt"
       - ".github/workflows/build-calendars.yml"
   # Optional schedule you may already have; kept as-is if present previously.
@@ -43,7 +43,7 @@ PY
 
       - name: Build calendar
         run: |
-          python build_calendar.py
+          python build_calendars.py
           mkdir -p public
           cp calendar.ics public/
           # Optional landing page; unchanged behavior
