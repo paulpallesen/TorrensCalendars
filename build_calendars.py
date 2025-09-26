@@ -1,63 +1,44 @@
-# build_calendar.py
-# NOTE: This version only adds:
-#  A) stable UID generation when missing
-#  B) stripping of NaN values so we don't write "nan" into ICS fields
-#
-# Everything else remains the same as the prior working file.
+# build_calendars.py
+# Reads a Google Sheet (CSV export URL) and generates calendar.ics
+# Includes Outlook-safe fixes: stable UID + removal of "nan" strings
 
 import pandas as pd
 from ics import Calendar, Event
 from hashlib import md5
-from datetime import datetime
 
+# ---- CONFIG --------------------------------------------------------------
+
+# Replace <SHEET_ID> and <GID> with your real IDs (Publish to the web → CSV)
+CSV_URL = "https://docs.google.com/spreadsheets/d/<SHEET_ID>/export?format=csv&gid=<GID>"
+
+# If your sheet uses different headers, map them here -> canonical names
+# Canonical names expected after mapping: Title, Start, End (optional),
+# Location (optional), Description (optional), URL (optional), UID (optional)
+COLUMN_MAP = {
+    # "Subject": "Title",
+    # "Start Time": "Start",
+    # "End Time": "End",
+    # "Room": "Location",
+}
+
+# Time zone (only used to localize if datetimes are naive)
 try:
-    # Python 3.9+
-    from zoneinfo import ZoneInfo
+    from zoneinfo import ZoneInfo  # Python 3.9+
     TZ = ZoneInfo("Australia/Sydney")
 except Exception:
-    TZ = None  # Fallback if zoneinfo isn't available; we won't change existing behavior
+    TZ = None  # leaves times naïve if zoneinfo isn't available
 
-EXCEL_FILE = "calendar.xlsx"   # keep your existing source filename
-OUTPUT_ICS  = "calendar.ics"   # keep your existing output filename
-
-# --- NEW: helpers to fix Outlook issues ---
-
-def make_uid(summary, dtstart, dtend, extra=""):
-    """
-    Create a stable unique UID per event when one is not provided.
-    Uses a hash of key fields so updates modify the same event.
-    """
-    # Convert datetimes to ISO-like strings to stabilize hashing
-    s_start = ""
-    s_end   = ""
-    try:
-        if pd.notna(dtstart):
-            s_start = pd.to_datetime(dtstart).isoformat()
-        if pd.notna(dtend):
-            s_end = pd.to_datetime(dtend).isoformat()
-    except Exception:
-        pass
-
-    base = f"{summary}|{s_start}|{s_end}|{extra}"
-    return md5(base.encode("utf-8")).hexdigest() + "@torrens-uni"
+# ---- Helpers -------------------------------------------------------------
 
 def clean_str(v):
-    """
-    Turn pandas NaN/None/whitespace into empty string; avoid literal 'nan' in ICS.
-    """
+    """Turn NaN/None/whitespace into empty string; avoid literal 'nan'."""
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return ""
-    try:
-        s = str(v).strip()
-    except Exception:
-        return ""
+    s = str(v).strip()
     return "" if s.lower() == "nan" else s
 
 def parse_dt(v):
-    """
-    Keep existing behavior: coerce to datetime if possible and localize to Australia/Sydney
-    only if tzinfo is missing. If TZ is unavailable, leave as-is.
-    """
+    """Coerce to pandas datetime; localize to TZ if naïve."""
     if pd.isna(v):
         return None
     dt = pd.to_datetime(v, errors="coerce")
@@ -70,59 +51,93 @@ def parse_dt(v):
             else:
                 dt = dt.tz_convert(TZ)
         except Exception:
-            # If localization fails, keep original
+            # If localization fails, keep as-is
             pass
     return dt
 
-def main():
-    # --- Keep your existing data source behavior (Excel) ---
-    df = pd.read_excel(EXCEL_FILE)
+def make_uid(summary, dtstart, dtend, extra=""):
+    """Stable UID for Outlook: hash of key fields."""
+    s_start = ""
+    s_end = ""
+    try:
+        if dtstart is not None:
+            s = pd.to_datetime(dtstart, errors="coerce")
+            s_start = "" if pd.isna(s) else s.isoformat()
+        if dtend is not None:
+            e = pd.to_datetime(dtend, errors="coerce")
+            s_end = "" if pd.isna(e) else e.isoformat()
+    except Exception:
+        pass
+    base = f"{summary}|{s_start}|{s_end}|{extra}"
+    return md5(base.encode("utf-8")).hexdigest() + "@torrens-uni"
 
+# ---- Core build ----------------------------------------------------------
+
+def read_sheet():
+    df = pd.read_csv(CSV_URL)
+    # Normalize headers and apply optional mapping
+    df.columns = [c.strip() for c in df.columns]
+    if COLUMN_MAP:
+        df = df.rename(columns=COLUMN_MAP)
+
+    # Replace blanks with NA, then drop rows missing essentials
+    df = df.replace(r"^\s*$", pd.NA, regex=True)
+    if "Title" not in df.columns or "Start" not in df.columns:
+        missing = [c for c in ["Title", "Start"] if c not in df.columns]
+        raise ValueError(f"Missing required column(s): {', '.join(missing)}")
+
+    df = df.dropna(subset=["Title", "Start"])
+
+    # Coerce datetimes (Start required; End optional)
+    for col in ["Start", "End"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+
+    # Drop rows where Start failed to parse
+    df = df.dropna(subset=["Start"])
+
+    return df
+
+def build_calendar(df: pd.DataFrame) -> Calendar:
     cal = Calendar()
-
-    for _, row in df.iterrows():
-        title = clean_str(row.get("Title", row.get("Subject", "")))
+    for _, r in df.iterrows():
+        title = clean_str(r.get("Title"))
         if not title:
             continue
 
-        start = parse_dt(row.get("Start"))
-        end   = parse_dt(row.get("End"))
-
-        # If both dates are missing, skip
+        start = parse_dt(r.get("Start"))
+        end   = parse_dt(r.get("End")) if "End" in r else None
         if start is None and end is None:
             continue
 
         ev = Event()
         ev.name = title
-
         if start is not None:
             ev.begin = start
         if end is not None:
             ev.end = end
 
-        # --- Only change here is the NaN cleaning and UID fallback ---
-        loc  = clean_str(row.get("Location"))
-        desc = clean_str(row.get("Description"))
-        url  = clean_str(row.get("URL"))
-        uid  = clean_str(row.get("UID"))
+        loc  = clean_str(r.get("Location"))
+        desc = clean_str(r.get("Description"))
+        url  = clean_str(r.get("URL"))
+        uid  = clean_str(r.get("UID")) or make_uid(title, start, end, loc)
 
-        if not uid:
-            uid = make_uid(title, start, end, loc)
-
-        if loc:
-            ev.location = loc
-        if desc:
-            ev.description = desc
-        if url:
-            # ics.Event has a 'url' property; safe to set when non-empty
-            ev.url = url
-
-        ev.uid = uid  # critical for Outlook
+        if loc:  ev.location = loc
+        if desc: ev.description = desc
+        if url:  ev.url = url
+        ev.uid = uid  # critical for Outlook consistency
 
         cal.events.add(ev)
-
-    with open(OUTPUT_ICS, "w", encoding="utf-8") as f:
-        f.writelines(cal)
+    return cal
 
 if __name__ == "__main__":
-    main()
+    df = read_sheet()
+    print(f"Rows after cleaning: {len(df)}")
+    if not df.empty:
+        try:
+            print(df.head(3).to_string(index=False))
+        except Exception:
+            pass
+    cal = build_calendar(df)
+    with open("calendar.ics", "w", encoding="utf-8") as f:
+        f.writelines(cal)
