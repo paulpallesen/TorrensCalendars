@@ -4,13 +4,12 @@ on:
   push:
     branches: [ main ]
     paths:
-      - "calendar.xlsx"
       - "build_calendars.py"
       - "requirements.txt"
       - ".github/workflows/build-calendars.yml"
-  # Optional schedule you may already have; kept as-is if present previously.
-  # schedule:
-  #   - cron: "0 14 * * *"  # 14:00 UTC ~ midnight Sydney depending on DST
+  # Rebuild automatically from Google Sheets (CSV) without any git push:
+  schedule:
+    - cron: "0 * * * *"   # hourly at minute 0; adjust as you like
   workflow_dispatch: {}
 
 permissions:
@@ -41,13 +40,13 @@ import ics, pandas, openpyxl
 print("✅ Installed OK -> ics:", ics.__version__, "pandas:", pandas.__version__, "openpyxl:", openpyxl.__version__)
 PY
 
-      - name: Build calendar
+      - name: Build calendars (generate /public/*.ics and landing page)
         run: |
           python build_calendars.py
           mkdir -p public
-          cp calendar.ics public/
-          # Optional landing page; unchanged behavior
+          cp *.ics public/ || true
           echo "<h1>Calendar Feed</h1><p><a href='calendar.ics'>calendar.ics</a></p>" > public/index.html
+          test -s public/calendar.ics || (echo "❌ calendar.ics not generated or empty" && exit 1)
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
