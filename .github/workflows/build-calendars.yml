@@ -7,7 +7,7 @@ on:
       - "calendar.xlsx"
       - "build_calendar.py"
       - "requirements.txt"
-      - ".github/workflows/build-calendar.yml"
+      - ".github/workflows/build-calendars.yml"
   # Optional schedule you may already have; kept as-is if present previously.
   # schedule:
   #   - cron: "0 14 * * *"  # 14:00 UTC ~ midnight Sydney depending on DST
