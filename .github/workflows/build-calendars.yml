@@ -7,9 +7,9 @@ on:
       - "build_calendars.py"
       - "requirements.txt"
       - ".github/workflows/build-calendars.yml"
-  # Rebuild automatically from Google Sheets (CSV) without any git push:
+  # Rebuild automatically from Google Sheets without a git push:
   schedule:
-    - cron: "0 * * * *"   # hourly at minute 0; adjust as you like
+    - cron: "0 * * * *"   # hourly at minute 0; adjust or remove if not needed
   workflow_dispatch: {}
 
 permissions:
